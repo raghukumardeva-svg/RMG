@@ -1,0 +1,126 @@
+[
+  {
+    "id": "NOTIF1764566459465",
+    "title": "Leave Request Rejected",
+    "description": "Your Earned Leave request has been rejected. Reason: Testing notification...",
+    "type": "rejection",
+    "role": "EMPLOYEE",
+    "userId": "EMP001",
+    "meta": {
+      "leaveId": "L1764565963603",
+      "actionUrl": "/leave"
+    },
+    "createdAt": "2025-12-01T05:20:59.465Z",
+    "isRead": true
+  },
+  {
+    "id": "NOTIF1764566535028",
+    "title": "New Leave Request",
+    "description": "Sai Nikhil Bomma has requested Earned Leave from Dec 03 to Dec 03, 2025",
+    "type": "leave",
+    "role": "MANAGER",
+    "userId": "MGR001",
+    "meta": {
+      "leaveId": "L1764566534987",
+      "employeeId": "EMP001",
+      "employeeName": "Sai Nikhil Bomma",
+      "leaveType": "Earned Leave",
+      "actionUrl": "/manager/leave-approvals"
+    },
+    "createdAt": "2025-12-01T05:22:15.028Z",
+    "isRead": true
+  },
+  {
+    "id": "NOTIF1764567883941",
+    "title": "New IT Helpdesk Ticket",
+    "description": "Sai Nikhil Bomma has raised a Email Issue ticket (Critical priority): issue with email storage",
+    "type": "ticket",
+    "role": "IT_ADMIN",
+    "meta": {
+      "ticketId": "HD1764567883915",
+      "employeeId": "1",
+      "employeeName": "Sai Nikhil Bomma",
+      "requestType": "Email Issue",
+      "urgency": "Critical",
+      "actionUrl": "/itadmin/tickets"
+    },
+    "createdAt": "2025-12-01T05:44:43.941Z",
+    "isRead": true
+  },
+  {
+    "id": "NOTIF1764568004577",
+    "title": "IT Admin Response",
+    "description": "IT Admin has responded to your ticket: issue with email storage",
+    "type": "ticket",
+    "role": "EMPLOYEE",
+    "userId": "1",
+    "meta": {
+      "ticketId": "HD1764567883915",
+      "actionUrl": "/it-helpdesk"
+    },
+    "createdAt": "2025-12-01T05:46:44.577Z",
+    "isRead": false
+  },
+  {
+    "id": "NOTIF1764570333183",
+    "title": "New IT Helpdesk Ticket",
+    "description": "Sai Nikhil Bomma has raised a Access Request ticket (High priority): Access required to the SharePoint",
+    "type": "ticket",
+    "role": "IT_ADMIN",
+    "meta": {
+      "ticketId": "HD1764570333146",
+      "employeeId": "1",
+      "employeeName": "Sai Nikhil Bomma",
+      "requestType": "Access Request",
+      "urgency": "High",
+      "actionUrl": "/itadmin/tickets"
+    },
+    "createdAt": "2025-12-01T06:25:33.183Z",
+    "isRead": true
+  },
+  {
+    "id": "NOTIF1764571468342",
+    "title": "IT Admin Response",
+    "description": "IT Admin has responded to your ticket: Access required to the SharePoint",
+    "type": "ticket",
+    "role": "EMPLOYEE",
+    "userId": "1",
+    "meta": {
+      "ticketId": "HD1764570333146",
+      "actionUrl": "/it-helpdesk"
+    },
+    "createdAt": "2025-12-01T06:44:28.342Z",
+    "isRead": false
+  },
+  {
+    "id": "NOTIF1764574613698",
+    "title": "Leave Request Approved ✓",
+    "description": "Your Earned Leave request from Dec 03 to Dec 03 has been approved",
+    "type": "approval",
+    "role": "EMPLOYEE",
+    "userId": "EMP001",
+    "meta": {
+      "leaveId": "L1764566534987",
+      "actionUrl": "/leave"
+    },
+    "createdAt": "2025-12-01T07:36:53.698Z",
+    "isRead": true
+  },
+  {
+    "id": "NOTIF1764579812173",
+    "title": "New Leave Request",
+    "description": "Sai Nikhil Bomma has requested Earned Leave from Dec 04 to Dec 09, 2025",
+    "type": "leave",
+    "role": "MANAGER",
+    "userId": "MGR001",
+    "meta": {
+      "leaveId": "L1764579812141",
+      "employeeId": "EMP001",
+      "employeeName": "Sai Nikhil Bomma",
+      "leaveType": "Earned Leave",
+      "actionUrl": "/manager/leave-approvals"
+    },
+    "createdAt": "2025-12-01T09:03:32.173Z",
+    "isRead": true
+  }
+]

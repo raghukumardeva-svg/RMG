@@ -1,0 +1,134 @@
+[
+  {
+    "_id": "HD1764151242828",
+    "id": "HD1764151242828",
+    "userId": "1",
+    "userName": "Sai Nikhil Bomma",
+    "userEmail": "sainikhil.bomma@acuvate.com",
+    "department": "Engineering",
+    "requestType": "Software Installation",
+    "subject": "Node JS installation",
+    "description": "Hi Team,\n\nNeed help in Node JS installation\n\nThanks in advance",
+    "urgency": "Medium",
+    "attachments": [],
+    "status": "Closed",
+    "createdAt": "2025-11-26T10:00:42.828Z",
+    "updatedAt": "2025-11-26T11:26:33.579Z",
+    "conversation": [
+      {
+        "sender": "itadmin",
+        "senderName": "Priya Sharma",
+        "message": "We are working on it",
+        "timestamp": "2025-11-26T10:08:30.823Z",
+        "attachments": [],
+        "type": "message"
+      },
+      {
+        "sender": "employee",
+        "senderName": "Sai Nikhil Bomma",
+        "message": "Sure thank you when can i expect.",
+        "timestamp": "2025-11-26T10:09:26.198Z",
+        "attachments": [],
+        "type": "message"
+      },
+      {
+        "sender": "itadmin",
+        "senderName": "Priya Sharma",
+        "message": "We are process",
+        "timestamp": "2025-11-26T11:11:54.593Z",
+        "attachments": [],
+        "type": "message"
+      },
+      {
+        "sender": "employee",
+        "senderName": "Sai Nikhil Bomma",
+        "message": "Thanks for the update",
+        "timestamp": "2025-11-26T11:13:11.688Z",
+        "attachments": [],
+        "type": "message"
+      },
+      {
+        "sender": "employee",
+        "senderName": "Sai Nikhil Bomma",
+        "message": "Thank for the installation its working file now you can close this ticket.",
+        "timestamp": "2025-11-26T11:25:40.996Z",
+        "attachments": [],
+        "type": "message"
+      }
+    ],
+    "itAdminId": "IT_ADMIN",
+    "assignedTo": "Priya Sharma"
+  },
+  {
+    "_id": "HD1764567883915",
+    "id": "HD1764567883915",
+    "userId": "1",
+    "userName": "Sai Nikhil Bomma",
+    "userEmail": "sainikhil.bomma@acuvate.com",
+    "department": "Engineering",
+    "requestType": "Email Issue",
+    "subject": "issue with email storage",
+    "description": "Hi Team,\n\nNeed your help in cleaning up email storage.\n\nThanks in advance ",
+    "urgency": "Critical",
+    "attachments": [],
+    "status": "Open",
+    "createdAt": "2025-12-01T05:44:43.915Z",
+    "updatedAt": "2025-12-01T05:46:44.552Z",
+    "conversation": [
+      {
+        "sender": "itadmin",
+        "senderName": "Priya Sharma",
+        "message": "Hi Nikhil team is working on it",
+        "timestamp": "2025-12-01T05:46:44.552Z",
+        "attachments": [],
+        "type": "message"
+      }
+    ],
+    "itAdminId": "IT_ADMIN",
+    "assignedTo": "Priya Sharma"
+  },
+  {
+    "_id": "HD1764570333146",
+    "id": "HD1764570333146",
+    "userId": "1",
+    "userName": "Sai Nikhil Bomma",
+    "userEmail": "sainikhil.bomma@acuvate.com",
+    "department": "Engineering",
+    "requestType": "Access Request",
+    "subject": "Access required to the SharePoint",
+    "description": "Hi Team,\n\nAccess required to the SharePoint.",
+    "urgency": "High",
+    "attachments": [],
+    "status": "In Progress",
+    "createdAt": "2025-12-01T06:25:33.149Z",
+    "updatedAt": "2025-12-03T10:21:14.321Z",
+    "conversation": [
+      {
+        "sender": "itadmin",
+        "senderName": "Priya Sharma",
+        "message": "Access given check and confirm",
+        "timestamp": "2025-12-01T06:44:28.304Z",
+        "attachments": [],
+        "type": "message"
+      },
+      {
+        "sender": "employee",
+        "senderName": "Sai Nikhil Bomma",
+        "message": "Thank you got the access",
+        "timestamp": "2025-12-01T06:45:41.520Z",
+        "attachments": [],
+        "type": "message"
+      },
+      {
+        "sender": "employee",
+        "senderName": "Sai Nikhil Bomma",
+        "message": "How much time it will take",
+        "timestamp": "2025-12-03T10:21:14.320Z",
+        "attachments": [],
+        "type": "message"
+      }
+    ],
+    "itAdminId": "IT_ADMIN",
+    "assignedTo": "Priya Sharma"
+  }
+]

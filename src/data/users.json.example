@@ -1,0 +1,11 @@
+[
+  {
+    "id": "1",
+    "name": "Example User",
+    "email": "user@example.com",
+    "password": "NEVER_STORE_PASSWORDS_HERE",
+    "role": "EMPLOYEE",
+    "department": "Engineering",
+    "employeeId": "EMP001"
+  }
+]

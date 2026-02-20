@@ -1,0 +1,36 @@
+{
+  "requests": [
+    {
+      "id": "LR1733059200000",
+      "_id": "LR1733059200000",
+      "employeeId": "EMP001",
+      "employeeName": "Sai Nikhil Bomma",
+      "department": "Engineering",
+      "leaveType": "Casual Leave",
+      "fromDate": "2025-12-10",
+      "toDate": "2025-12-12",
+      "days": 3,
+      "reason": "Family function",
+      "status": "Rejected",
+      "appliedOn": "2025-12-01T10:00:00.000Z",
+      "reviewedBy": "Rajesh Kumar",
+      "reviewedOn": "2025-12-01T09:29:01.916Z"
+    },
+    {
+      "id": "LR1733059300000",
+      "_id": "LR1733059300000",
+      "employeeId": "EMP001",
+      "employeeName": "Sai Nikhil Bomma",
+      "department": "Engineering",
+      "leaveType": "Sick Leave",
+      "fromDate": "2025-11-25",
+      "toDate": "2025-11-26",
+      "days": 2,
+      "reason": "Medical checkup",
+      "status": "Approved",
+      "appliedOn": "2025-11-20T09:00:00.000Z",
+      "reviewedOn": "2025-11-20T14:30:00.000Z",
+      "reviewedBy": "Rajesh Kumar"
+    }
+  ]
+}

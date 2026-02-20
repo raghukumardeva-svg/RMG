@@ -1,0 +1,71 @@
+[
+  {
+    "userId": "EMP001",
+    "earnedLeave": {
+      "total": 20,
+      "used": 3,
+      "remaining": 17
+    },
+    "sabbaticalLeave": {
+      "total": 182,
+      "used": 0,
+      "remaining": 182
+    },
+    "compOff": {
+      "total": 4,
+      "used": 0,
+      "remaining": 4
+    },
+    "paternityLeave": {
+      "total": 3,
+      "used": 0,
+      "remaining": 3
+    }
+  },
+  {
+    "userId": "MGR001",
+    "earnedLeave": {
+      "total": 20,
+      "used": 0,
+      "remaining": 20
+    },
+    "sabbaticalLeave": {
+      "total": 182,
+      "used": 0,
+      "remaining": 182
+    },
+    "compOff": {
+      "total": 0,
+      "used": 0,
+      "remaining": 0
+    },
+    "paternityLeave": {
+      "total": 3,
+      "used": 0,
+      "remaining": 3
+    }
+  },
+  {
+    "userId": "IT001",
+    "earnedLeave": {
+      "total": 20,
+      "used": 0,
+      "remaining": 20
+    },
+    "sabbaticalLeave": {
+      "total": 182,
+      "used": 0,
+      "remaining": 182
+    },
+    "compOff": {
+      "total": 0,
+      "used": 0,
+      "remaining": 0
+    },
+    "paternityLeave": {
+      "total": 3,
+      "used": 0,
+      "remaining": 3
+    }
+  }
+]
