@@ -132,7 +132,7 @@ const isEndingSoon = (endDateStr: string) => {
  * Redesigned Chart Components
  */
 
-// 1. KPI 1: Allocation Summary - Total Allocation Percentage Only
+// 1. KPI 1: Allocation Summary - Semi-Circle Gauge (Half-Donut)
 const AllocationSummaryChart: React.FC<{
   data: any[];
   employeeCount: number;
@@ -162,18 +162,18 @@ const AllocationSummaryChart: React.FC<{
   ].filter((item) => item.value > 0);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2">
       <div className="relative flex items-center justify-center">
-        <ResponsiveContainer width="100%" height={240}>
+        <ResponsiveContainer width="100%" height={160}>
           <PieChart>
             <Pie
               data={simplifiedData}
               cx="50%"
-              cy="50%"
+              cy="85%"
               innerRadius={60}
-              outerRadius={85}
-              startAngle={90}
-              endAngle={450}
+              outerRadius={90}
+              startAngle={180}
+              endAngle={0}
               paddingAngle={0}
               dataKey="value"
               label={false}
@@ -185,11 +185,11 @@ const AllocationSummaryChart: React.FC<{
             </Pie>
           </PieChart>
         </ResponsiveContainer>
-        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+        <div className="absolute bottom-4 left-0 right-0 flex flex-col items-center justify-center pointer-events-none">
           <span className="text-4xl font-bold text-slate-800 leading-none">
             {roundedAllocation}%
           </span>
-          <span className="text-xs text-slate-500 font-medium uppercase tracking-wider mt-2">
+          <span className="text-xs text-slate-500 font-medium uppercase tracking-wider mt-1">
             Allocated
           </span>
         </div>
@@ -280,136 +280,102 @@ const MultiProjectAllocationChart: React.FC<{ data: any[] }> = ({ data }) => (
   </ResponsiveContainer>
 );
 
-// 2b. Weekly Project Allocation Component (Horizontal Single Row)
-const WeeklyProjectAllocationChart: React.FC<{
-  weeklyData: any[];
-  startDate: string;
-  endDate: string;
-}> = ({ weeklyData, startDate, endDate }) => {
-  if (!weeklyData || weeklyData.length === 0) {
+// 2b. Monthly Daily Allocation Progress Bar (Day-by-Day Multi-Segment)
+const MonthlyDailyAllocationChart: React.FC<{
+  dailyData: any[];
+}> = ({ dailyData }) => {
+  if (!dailyData || dailyData.length === 0) {
     return (
       <div className="flex items-center justify-center h-48 text-slate-400 text-sm">
-        No allocation data available for the selected date range
+        No allocation data available for the selected month
       </div>
     );
   }
 
   return (
-    <div className="overflow-x-auto pb-2">
-      <div className="flex gap-2 min-w-max">
-        {weeklyData.map((weekData, index) => (
-          <div key={index} className="flex-shrink-0 w-[100px]">
-            <div className="space-y-2">
-              {/* Week label */}
-              <div className="text-center">
-                <p className="text-xs font-semibold text-slate-700">
-                  {weekData.weekLabel}
-                </p>
-                <p className="text-[10px] text-slate-400">
-                  {format(new Date(weekData.weekStart), "MMM dd")} -{" "}
-                  {format(new Date(weekData.weekEnd), "dd")}
-                </p>
-              </div>
+    <div className="space-y-4">
+      {/* Month day labels */}
+      <div className="flex justify-between text-[10px] text-slate-500 px-1">
+        <span>Day 1</span>
+        <span>Day {Math.ceil(dailyData.length / 2)}</span>
+        <span>Day {dailyData.length}</span>
+      </div>
 
-              {/* Stacked bar */}
-              <div className="relative h-[120px] bg-slate-100 rounded-lg overflow-hidden">
-                {/* Projects (orange) */}
-                {weekData.allocatedPercentage > 0 && (
-                  <div
-                    className="absolute bottom-0 left-0 right-0 bg-orange-500 hover:bg-orange-600 transition-colors cursor-pointer group"
-                    style={{ height: `${weekData.allocatedPercentage}%` }}
-                    title={`Projects: ${weekData.allocatedPercentage.toFixed(1)}%`}
-                  >
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="text-[10px] font-bold text-white opacity-0 group-hover:opacity-100 transition-opacity">
-                        {weekData.allocatedPercentage.toFixed(0)}%
-                      </span>
-                    </div>
-                  </div>
-                )}
+      {/* Multi-segment progress bar */}
+      <div className="relative h-12 bg-slate-100 rounded-lg overflow-hidden flex">
+        {dailyData.map((day, index) => {
+          const segmentWidth = `${100 / dailyData.length}%`;
 
-                {/* Bench (gray) */}
-                {weekData.benchPercentage > 0 && (
-                  <div
-                    className="absolute left-0 right-0 bg-gray-400 hover:bg-gray-500 transition-colors cursor-pointer group"
-                    style={{
-                      top: 0,
-                      height: `${weekData.benchPercentage}%`,
-                    }}
-                    title={`Bench: ${weekData.benchPercentage.toFixed(1)}%`}
-                  >
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="text-[10px] font-bold text-white opacity-0 group-hover:opacity-100 transition-opacity">
-                        {weekData.benchPercentage.toFixed(0)}%
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Capacity info */}
-              <div className="text-center">
-                <p className="text-[9px] text-slate-500">
-                  {weekData.weekCapacity}h capacity
-                </p>
-              </div>
-
+          return (
+            <div
+              key={index}
+              className="relative group cursor-pointer transition-all hover:brightness-110"
+              style={{
+                width: segmentWidth,
+                backgroundColor: day.color,
+                borderRight:
+                  index < dailyData.length - 1
+                    ? "1px solid rgba(255,255,255,0.2)"
+                    : "none",
+              }}
+              title={`${day.date}: ${day.projectName || "Bench"}`}
+            >
               {/* Tooltip on hover */}
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button className="w-full text-[9px] text-blue-600 hover:text-blue-700 font-medium">
-                    View Details
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent className="w-72" align="start">
-                  <div className="space-y-3">
-                    <div>
-                      <p className="font-bold text-slate-800 text-sm">
-                        {weekData.weekLabel}
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        {format(new Date(weekData.weekStart), "MMM dd")} -{" "}
-                        {format(new Date(weekData.weekEnd), "MMM dd, yyyy")}
-                      </p>
-                    </div>
-
-                    {weekData.projects && weekData.projects.length > 0 && (
-                      <div className="space-y-2">
-                        <p className="text-xs font-semibold text-slate-600">
-                          Projects:
-                        </p>
-                        {weekData.projects.map((proj: any, idx: number) => (
-                          <div
-                            key={idx}
-                            className="flex justify-between items-start gap-2 text-xs"
-                          >
-                            <span className="font-medium text-slate-700 flex-1">
-                              {proj.projectName}
-                            </span>
-                            <span className="font-bold text-orange-600">
-                              {proj.percentage.toFixed(1)}%
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {weekData.benchPercentage > 0 && (
-                      <div className="flex justify-between items-center pt-2 border-t">
-                        <span className="text-xs font-medium text-slate-600">
-                          Bench
-                        </span>
-                        <span className="text-xs font-bold text-gray-600">
-                          {weekData.benchPercentage.toFixed(1)}%
-                        </span>
-                      </div>
-                    )}
+              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block z-10 pointer-events-none">
+                <div className="bg-slate-900 text-white text-xs rounded-lg px-3 py-2 shadow-lg whitespace-nowrap">
+                  <div className="font-semibold">
+                    {format(new Date(day.date), "MMM dd, yyyy")}
                   </div>
-                </PopoverContent>
-              </Popover>
+                  {day.projectName && day.projectName !== "Bench" ? (
+                    <>
+                      <div className="mt-1 text-slate-300">
+                        Project: {day.projectName}
+                      </div>
+                      {day.allocationStart && (
+                        <div className="text-slate-400 text-[10px] mt-1">
+                          {format(new Date(day.allocationStart), "MMM dd")} -{" "}
+                          {format(new Date(day.allocationEnd), "MMM dd, yyyy")}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="mt-1 text-slate-300">Status: Bench</div>
+                  )}
+                  <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-slate-900"></div>
+                </div>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
+      </div>
+
+      {/* Legend */}
+      <div className="flex flex-wrap gap-3 justify-center text-xs">
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded-sm bg-slate-300"></div>
+          <span className="text-slate-600">Before Allocation</span>
+        </div>
+        {dailyData
+          .filter(
+            (day, index, self) =>
+              day.projectName &&
+              day.projectName !== "Bench" &&
+              self.findIndex((d) => d.projectName === day.projectName) ===
+                index,
+          )
+          .map((day, index) => (
+            <div key={index} className="flex items-center gap-1.5">
+              <div
+                className="w-3 h-3 rounded-sm"
+                style={{ backgroundColor: day.color }}
+              ></div>
+              <span className="text-slate-600">{day.projectName}</span>
+            </div>
+          ))}
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded-sm bg-gray-400"></div>
+          <span className="text-slate-600">Bench</span>
+        </div>
       </div>
     </div>
   );
@@ -1472,7 +1438,8 @@ const EmployeeHoursReport: React.FC = () => {
   }, [projectAllocations]);
 
   // 2b. Weekly Project Allocation Data
-  const weeklyProjectAllocationData = useMemo(() => {
+  // 2b. Monthly Daily Allocation Data - Day-by-Day Segments
+  const monthlyDailyAllocationData = useMemo(() => {
     if (!startDate || !endDate || projectAllocations.length === 0) {
       return [];
     }
@@ -1481,127 +1448,107 @@ const EmployeeHoursReport: React.FC = () => {
       const start = new Date(startDate);
       const end = new Date(endDate);
 
-      // Standard weekly capacity (40 hours per week)
-      const WEEKLY_CAPACITY = 40;
+      // Generate all days in the selected month/date range
+      const allDays = eachDayOfInterval({ start, end });
 
-      // Generate weeks in the date range
-      const weeks = eachWeekOfInterval(
-        { start, end },
-        { weekStartsOn: 1 }, // Monday
-      );
+      // Default color for days before any allocation
+      const DEFAULT_COLOR = "#cbd5e1"; // slate-300
+      const BENCH_COLOR = "#9ca3af"; // gray-400
 
-      return weeks.map((weekStart, index) => {
-        const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 });
-        const actualWeekEnd = weekEnd > end ? end : weekEnd;
-        const weekLabel = `Week ${index + 1}`;
-
-        // Calculate working days in this week (within the date range)
-        const weekDays = Math.min(
-          5, // Max 5 working days per week
-          Math.ceil(
-            (actualWeekEnd.getTime() - weekStart.getTime()) /
-              (1000 * 60 * 60 * 24),
-          ) + 1,
-        );
-        const weekCapacity = (weekDays / 5) * WEEKLY_CAPACITY;
-
-        // Find projects that overlap with this week and calculate their weekly allocation
-        const weekProjects = projectAllocations
-          .filter((proj) => {
-            if (proj.projectName === "Bench") return false;
-
-            const projStart = new Date(proj.startDate);
-            const projEnd = new Date(proj.endDate);
-
-            // Check if project overlaps with this week
-            return projStart <= actualWeekEnd && projEnd >= weekStart;
-          })
-          .map((proj) => {
-            // Use the project's percentage directly if 100% allocated
-            // Otherwise calculate based on hours distribution
-            let weeklyPercentage = proj.percentage;
-
-            // If the project spans multiple weeks, we need to check if it's a partial allocation
-            // For now, if percentage is 100, assume full weekly allocation
-            if (proj.percentage === 100) {
-              weeklyPercentage = 100;
-            } else {
-              const projStart = new Date(proj.startDate);
-              const projEnd = new Date(proj.endDate);
-
-              // Calculate total project duration in weeks
-              const projectDurationMs = projEnd.getTime() - projStart.getTime();
-              const projectWeeks = Math.max(
-                1,
-                Math.ceil(projectDurationMs / (7 * 24 * 60 * 60 * 1000)),
-              );
-
-              // Calculate hours per week for this project
-              const hoursPerWeek = proj.hours / projectWeeks;
-
-              // Calculate percentage of weekly capacity
-              weeklyPercentage = (hoursPerWeek / weekCapacity) * 100;
-            }
-
-            return {
-              projectName: proj.projectName,
-              percentage: Math.min(100, weeklyPercentage),
-              hoursPerWeek: (
-                proj.hours /
-                Math.max(
-                  1,
-                  Math.ceil(
-                    (new Date(proj.endDate).getTime() -
-                      new Date(proj.startDate).getTime()) /
-                      (7 * 24 * 60 * 60 * 1000),
-                  ),
-                )
-              ).toFixed(1),
-              startDate: proj.startDate,
-              endDate: proj.endDate,
-            };
-          });
-
-        // Calculate total allocated percentage for this week
-        const allocatedPercentage = Math.min(
-          100,
-          weekProjects.reduce((sum, proj) => sum + proj.percentage, 0),
+      // Sort project allocations by start date
+      const sortedAllocations = [...projectAllocations]
+        .filter((proj) => proj.projectName !== "Bench")
+        .sort(
+          (a, b) =>
+            new Date(a.startDate).getTime() - new Date(b.startDate).getTime(),
         );
 
-        // Calculate bench percentage (remaining capacity)
-        // Round to avoid floating point precision issues
-        const benchPercentage = Math.max(
-          0,
-          Math.round((100 - allocatedPercentage) * 10) / 10,
-        );
+      // Find the first allocation start date
+      const firstAllocationDate =
+        sortedAllocations.length > 0
+          ? new Date(sortedAllocations[0].startDate)
+          : null;
 
+      // Find the last allocation end date
+      const lastAllocationDate =
+        sortedAllocations.length > 0
+          ? new Date(sortedAllocations[sortedAllocations.length - 1].endDate)
+          : null;
+
+      // Map each day to its appropriate segment
+      return allDays.map((day) => {
+        const dayDate = day.toISOString().split("T")[0];
+
+        // Check if day is before first allocation
+        if (firstAllocationDate && day < firstAllocationDate) {
+          return {
+            date: dayDate,
+            projectName: null,
+            color: DEFAULT_COLOR,
+            allocationStart: null,
+            allocationEnd: null,
+          };
+        }
+
+        // Check if day is after last allocation
+        if (lastAllocationDate && day > lastAllocationDate) {
+          return {
+            date: dayDate,
+            projectName: "Bench",
+            color: BENCH_COLOR,
+            allocationStart: null,
+            allocationEnd: null,
+          };
+        }
+
+        // Find which project(s) this day belongs to
+        const activeAllocations = sortedAllocations.filter((proj) => {
+          const projStart = new Date(proj.startDate);
+          const projEnd = new Date(proj.endDate);
+          return day >= projStart && day <= projEnd;
+        });
+
+        // If day falls within an allocation period
+        if (activeAllocations.length > 0) {
+          // Use the first matching allocation (or could use most recent)
+          const allocation = activeAllocations[0];
+          return {
+            date: dayDate,
+            projectName: allocation.projectName,
+            color:
+              allocation.color || generateProjectColor(allocation.projectName),
+            allocationStart: allocation.startDate,
+            allocationEnd: allocation.endDate,
+          };
+        }
+
+        // If no allocation found for this day (gap between allocations)
         return {
-          weekLabel,
-          weekStart: weekStart.toISOString().split("T")[0],
-          weekEnd: actualWeekEnd.toISOString().split("T")[0],
-          projects: weekProjects,
-          allocatedPercentage,
-          benchPercentage,
-          weekCapacity: weekCapacity.toFixed(0),
+          date: dayDate,
+          projectName: "Bench",
+          color: BENCH_COLOR,
+          allocationStart: null,
+          allocationEnd: null,
         };
       });
     } catch (error) {
-      console.error("Error calculating weekly allocation data:", error);
+      console.error("Error calculating monthly daily allocation data:", error);
       return [];
     }
   }, [projectAllocations, startDate, endDate]);
 
-  // Calculate average allocated projects
+  // Calculate average allocated projects (kept for compatibility)
   const averageAllocatedProjects = useMemo(() => {
-    if (weeklyProjectAllocationData.length === 0) return "0.0";
+    if (monthlyDailyAllocationData.length === 0) return "0.0";
 
-    const totalProjects = weeklyProjectAllocationData.reduce(
-      (sum, week) => sum + (week.projects?.length || 0),
-      0,
+    const allocatedDays = monthlyDailyAllocationData.filter(
+      (day) => day.projectName && day.projectName !== "Bench",
     );
 
-    return (totalProjects / weeklyProjectAllocationData.length).toFixed(1);
-  }, [weeklyProjectAllocationData]);
+    const uniqueProjects = new Set(allocatedDays.map((day) => day.projectName));
+
+    return uniqueProjects.size.toFixed(1);
+  }, [monthlyDailyAllocationData]);
 
   // 3. Approval Status (From TimesheetEntries table)
   const redesignedStatusData = useMemo(() => {
@@ -1888,10 +1835,10 @@ const EmployeeHoursReport: React.FC = () => {
                 </Card>
               )}
 
-            {/* KPI Row: 3 Cards in Single Row */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {/* Chart 1: Allocation Summary */}
-              <Card className="border-none shadow-sm bg-slate-50/50 overflow-hidden">
+            {/* KPI Row: 3 Cards in Single Row - 25%, 50%, 25% Layout */}
+            <div className="flex flex-col lg:flex-row gap-6">
+              {/* Chart 1: Allocation Summary - 25% */}
+              <Card className="border-none shadow-sm bg-slate-50/50 overflow-hidden lg:w-1/4">
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
                     <div>
@@ -1899,14 +1846,9 @@ const EmployeeHoursReport: React.FC = () => {
                         Allocation Summary
                       </CardTitle>
                       <CardDescription>
-                        Project allocation percentages
+                        Total allocation percentage
                       </CardDescription>
                     </div>
-                    <Badge variant="outline" className="bg-white">
-                      {startDate && endDate
-                        ? `${format(new Date(startDate), "MMM dd")} - ${format(new Date(endDate), "MMM dd, yyyy")}`
-                        : "Select Date Range"}
-                    </Badge>
                   </div>
                 </CardHeader>
                 <CardContent className="pt-4">
@@ -1920,8 +1862,8 @@ const EmployeeHoursReport: React.FC = () => {
                 </CardContent>
               </Card>
 
-              {/* Chart 2: Multi-Project Allocation - Weekly View */}
-              <Card className="border-none shadow-sm bg-slate-50/50 overflow-hidden">
+              {/* Chart 2: Project Allocations - Monthly Daily View - 50% */}
+              <Card className="border-none shadow-sm bg-slate-50/50 overflow-hidden lg:w-1/2">
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
                     <div>
@@ -1929,32 +1871,25 @@ const EmployeeHoursReport: React.FC = () => {
                         Project Allocations
                       </CardTitle>
                       <CardDescription>
-                        Weekly allocation view with bench capacity
+                        Daily allocation timeline for selected month
                       </CardDescription>
                     </div>
-                    <div className="flex gap-2">
-                      <span className="flex items-center gap-1 text-[10px] text-slate-500">
-                        <div className="w-2 h-2 rounded-full bg-orange-500"></div>
-                        Projects
-                      </span>
-                      <span className="flex items-center gap-1 text-[10px] text-slate-500">
-                        <div className="w-2 h-2 rounded-full bg-gray-400"></div>
-                        Bench
-                      </span>
-                    </div>
+                    <Badge variant="outline" className="bg-white">
+                      {startDate && endDate
+                        ? `${format(new Date(startDate), "MMM yyyy")}`
+                        : "Select Month"}
+                    </Badge>
                   </div>
                 </CardHeader>
                 <CardContent className="pt-4">
-                  <WeeklyProjectAllocationChart
-                    weeklyData={weeklyProjectAllocationData}
-                    startDate={startDate}
-                    endDate={endDate}
+                  <MonthlyDailyAllocationChart
+                    dailyData={monthlyDailyAllocationData}
                   />
                 </CardContent>
               </Card>
 
-              {/* Chart 3: Approval Status */}
-              <Card className="border-none shadow-sm bg-slate-50/50 overflow-hidden">
+              {/* Chart 3: Approval Status - 25% */}
+              <Card className="border-none shadow-sm bg-slate-50/50 overflow-hidden lg:w-1/4">
                 <CardHeader className="pb-2">
                   <div>
                     <CardTitle className="text-lg font-bold text-slate-800">
