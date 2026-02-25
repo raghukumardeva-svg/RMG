@@ -33,19 +33,38 @@ router.get('/', async (req, res) => {
             managerId
         } = req.query;
 
-        if (!role || !month) {
+        // Validate role is always required
+        if (!role) {
             return res.status(400).json({
-                message: 'role and month are required'
+                message: 'role is required'
             });
         }
 
-        // Parse month to get date range
-        const [year, monthNum] = String(month).split('-').map(Number);
-        const monthStart = new Date(year, monthNum - 1, 1);
-        monthStart.setHours(0, 0, 0, 0);
-        const monthEnd = new Date(year, monthNum, 0, 23, 59, 59, 999);
+        // Calculate date range - use month OR startDate/endDate OR default to current month
+        let monthStart: Date;
+        let monthEnd: Date;
 
-        console.log(`[Employee Hours Report] Role: ${role}, Month: ${month}`);
+        if (startDate && endDate) {
+            // Use provided date range
+            monthStart = new Date(startDate as string);
+            monthStart.setHours(0, 0, 0, 0);
+            monthEnd = new Date(endDate as string);
+            monthEnd.setHours(23, 59, 59, 999);
+        } else if (month) {
+            // Parse month to get date range
+            const [year, monthNum] = String(month).split('-').map(Number);
+            monthStart = new Date(year, monthNum - 1, 1);
+            monthStart.setHours(0, 0, 0, 0);
+            monthEnd = new Date(year, monthNum, 0, 23, 59, 59, 999);
+        } else {
+            // Default to current month
+            const now = new Date();
+            monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            monthStart.setHours(0, 0, 0, 0);
+            monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+        }
+
+        console.log(`[Employee Hours Report] Role: ${role}, Date Range: ${monthStart.toISOString()} to ${monthEnd.toISOString()}`);
 
         // Role-based data fetching
         let employeeIds: string[] = [];

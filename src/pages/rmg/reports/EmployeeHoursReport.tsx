@@ -74,6 +74,13 @@ import {
 } from "@/components/ui/popover";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useAuthStore } from "@/store/authStore";
 import employeeHoursReportService from "@/services/employeeHoursReportService";
 import type {
@@ -147,12 +154,15 @@ const AllocationSummaryChart: React.FC<{
 
   const roundedAllocation = Math.round(allocatedPercentage);
 
+  // Determine color based on allocation
+  const allocationColor = roundedAllocation === 0 ? "#94a3b8" : "#6366f1"; // Gray if 0%, Indigo if allocated
+
   // Create simplified data: allocated vs unallocated
   const simplifiedData = [
     {
       name: "Allocated",
       value: roundedAllocation,
-      color: "#6366f1", // Indigo color for allocated
+      color: allocationColor,
     },
     {
       name: "Unallocated",
@@ -162,16 +172,19 @@ const AllocationSummaryChart: React.FC<{
   ].filter((item) => item.value > 0);
 
   return (
-    <div className="space-y-2">
-      <div className="relative flex items-center justify-center">
-        <ResponsiveContainer width="100%" height={160}>
+    <div className="space-y-2 w-full">
+      <div
+        className="relative flex items-center justify-center"
+        style={{ minHeight: "220px" }}
+      >
+        <ResponsiveContainer width="100%" height={220}>
           <PieChart>
             <Pie
               data={simplifiedData}
               cx="50%"
-              cy="85%"
-              innerRadius={60}
-              outerRadius={90}
+              cy="75%"
+              innerRadius={75}
+              outerRadius={110}
               startAngle={180}
               endAngle={0}
               paddingAngle={0}
@@ -180,7 +193,12 @@ const AllocationSummaryChart: React.FC<{
               labelLine={false}
             >
               {simplifiedData.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={entry.color} />
+                <Cell
+                  key={`cell-${index}`}
+                  fill={entry.color}
+                  stroke={entry.color}
+                  strokeWidth={2}
+                />
               ))}
             </Pie>
           </PieChart>
@@ -292,19 +310,32 @@ const MonthlyDailyAllocationChart: React.FC<{
     );
   }
 
+  // Calculate total days from merged segments
+  const totalDays = dailyData.reduce(
+    (sum, segment) => sum + segment.dayCount,
+    0,
+  );
+
   return (
     <div className="space-y-4">
       {/* Month day labels */}
       <div className="flex justify-between text-[10px] text-slate-500 px-1">
         <span>Day 1</span>
-        <span>Day {Math.ceil(dailyData.length / 2)}</span>
-        <span>Day {dailyData.length}</span>
+        <span>Day {Math.ceil(totalDays / 2)}</span>
+        <span>Day {totalDays}</span>
       </div>
 
       {/* Multi-segment progress bar */}
       <div className="relative h-12 bg-slate-100 rounded-lg overflow-hidden flex">
-        {dailyData.map((day, index) => {
-          const segmentWidth = `${100 / dailyData.length}%`;
+        {dailyData.map((segment, index) => {
+          // Calculate width based on day count
+          const segmentWidth = `${(segment.dayCount / totalDays) * 100}%`;
+
+          // Format date range for tooltip
+          const isSingleDay = segment.startDate === segment.endDate;
+          const dateDisplay = isSingleDay
+            ? format(new Date(segment.startDate), "MMM dd, yyyy")
+            : `${format(new Date(segment.startDate), "MMM dd")} – ${format(new Date(segment.endDate), "MMM dd, yyyy")}`;
 
           return (
             <div
@@ -312,29 +343,32 @@ const MonthlyDailyAllocationChart: React.FC<{
               className="relative group cursor-pointer transition-all hover:brightness-110"
               style={{
                 width: segmentWidth,
-                backgroundColor: day.color,
+                backgroundColor: segment.color,
                 borderRight:
                   index < dailyData.length - 1
                     ? "1px solid rgba(255,255,255,0.2)"
                     : "none",
               }}
-              title={`${day.date}: ${day.projectName || "Bench"}`}
+              title={`${dateDisplay}: ${segment.projectName || "Bench"}`}
             >
               {/* Tooltip on hover */}
               <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block z-10 pointer-events-none">
                 <div className="bg-slate-900 text-white text-xs rounded-lg px-3 py-2 shadow-lg whitespace-nowrap">
-                  <div className="font-semibold">
-                    {format(new Date(day.date), "MMM dd, yyyy")}
-                  </div>
-                  {day.projectName && day.projectName !== "Bench" ? (
+                  <div className="font-semibold">{dateDisplay}</div>
+                  {segment.projectName && segment.projectName !== "Bench" ? (
                     <>
                       <div className="mt-1 text-slate-300">
-                        Project: {day.projectName}
+                        Project: {segment.projectName}
                       </div>
-                      {day.allocationStart && (
+                      {segment.allocationStart && (
                         <div className="text-slate-400 text-[10px] mt-1">
-                          {format(new Date(day.allocationStart), "MMM dd")} -{" "}
-                          {format(new Date(day.allocationEnd), "MMM dd, yyyy")}
+                          Full allocation:{" "}
+                          {format(new Date(segment.allocationStart), "MMM dd")}{" "}
+                          -{" "}
+                          {format(
+                            new Date(segment.allocationEnd),
+                            "MMM dd, yyyy",
+                          )}
                         </div>
                       )}
                     </>
@@ -351,25 +385,21 @@ const MonthlyDailyAllocationChart: React.FC<{
 
       {/* Legend */}
       <div className="flex flex-wrap gap-3 justify-center text-xs">
-        <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded-sm bg-slate-300"></div>
-          <span className="text-slate-600">Before Allocation</span>
-        </div>
         {dailyData
           .filter(
-            (day, index, self) =>
-              day.projectName &&
-              day.projectName !== "Bench" &&
-              self.findIndex((d) => d.projectName === day.projectName) ===
+            (segment, index, self) =>
+              segment.projectName &&
+              segment.projectName !== "Bench" &&
+              self.findIndex((s) => s.projectName === segment.projectName) ===
                 index,
           )
-          .map((day, index) => (
+          .map((segment, index) => (
             <div key={index} className="flex items-center gap-1.5">
               <div
                 className="w-3 h-3 rounded-sm"
-                style={{ backgroundColor: day.color }}
+                style={{ backgroundColor: segment.color }}
               ></div>
-              <span className="text-slate-600">{day.projectName}</span>
+              <span className="text-slate-600">{segment.projectName}</span>
             </div>
           ))}
         <div className="flex items-center gap-1.5">
@@ -495,12 +525,6 @@ const ApprovalStatusDoughnut: React.FC<{
                 );
               }}
             />
-            <Legend
-              layout="horizontal"
-              verticalAlign="bottom"
-              align="center"
-              iconType="circle"
-            />
           </PieChart>
         </ResponsiveContainer>
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none pb-8">
@@ -511,36 +535,6 @@ const ApprovalStatusDoughnut: React.FC<{
             Total Hrs
           </span>
         </div>
-      </div>
-
-      {/* Status breakdown with percentages */}
-      <div className="mt-4 space-y-2">
-        {data.map((item, index) => {
-          const percentage =
-            total > 0 ? ((item.value / total) * 100).toFixed(1) : 0;
-          return (
-            <div
-              key={index}
-              className="flex items-center justify-between py-1.5 px-2 rounded bg-slate-50"
-            >
-              <div className="flex items-center gap-2">
-                <div
-                  className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: item.color }}
-                />
-                <span className="text-xs font-medium text-slate-700">
-                  {item.name}
-                </span>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-bold text-slate-600">
-                  {percentage}%
-                </span>
-                <span className="text-xs text-slate-500">{item.value}h</span>
-              </div>
-            </div>
-          );
-        })}
       </div>
     </div>
   );
@@ -558,6 +552,12 @@ const EmployeeHoursReport: React.FC = () => {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [projectAllocations, setProjectAllocations] = useState<any[]>([]);
   const [approvalStatusData, setApprovalStatusData] = useState<any[]>([]);
+
+  // Custom Date Range Dialog
+  const [customDateDialogOpen, setCustomDateDialogOpen] = useState(false);
+  const [tempStartDate, setTempStartDate] = useState("");
+  const [tempEndDate, setTempEndDate] = useState("");
+  const [activeTab, setActiveTab] = useState("overview");
 
   // Filters
   const [dateRangeType, setDateRangeType] = useState<string>("current_month");
@@ -1476,7 +1476,7 @@ const EmployeeHoursReport: React.FC = () => {
           : null;
 
       // Map each day to its appropriate segment
-      return allDays.map((day) => {
+      const dailySegments = allDays.map((day) => {
         const dayDate = day.toISOString().split("T")[0];
 
         // Check if day is before first allocation
@@ -1531,6 +1531,46 @@ const EmployeeHoursReport: React.FC = () => {
           allocationEnd: null,
         };
       });
+
+      // Merge consecutive segments with the same project
+      const mergedSegments: Array<{
+        startDate: string;
+        endDate: string;
+        projectName: string | null;
+        color: string;
+        allocationStart: string | null;
+        allocationEnd: string | null;
+        dayCount: number;
+      }> = [];
+
+      dailySegments.forEach((segment, index) => {
+        const lastMerged = mergedSegments[mergedSegments.length - 1];
+
+        // Check if we can merge with the previous segment
+        const canMerge =
+          lastMerged &&
+          lastMerged.projectName === segment.projectName &&
+          lastMerged.color === segment.color;
+
+        if (canMerge) {
+          // Extend the end date and increment day count
+          lastMerged.endDate = segment.date;
+          lastMerged.dayCount += 1;
+        } else {
+          // Start a new merged segment
+          mergedSegments.push({
+            startDate: segment.date,
+            endDate: segment.date,
+            projectName: segment.projectName,
+            color: segment.color,
+            allocationStart: segment.allocationStart,
+            allocationEnd: segment.allocationEnd,
+            dayCount: 1,
+          });
+        }
+      });
+
+      return mergedSegments;
     } catch (error) {
       console.error("Error calculating monthly daily allocation data:", error);
       return [];
@@ -1626,15 +1666,15 @@ const EmployeeHoursReport: React.FC = () => {
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <div className="page-container">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-            <FileText className="h-8 w-8" />
+      <div className="page-header">
+        <div className="page-header-content">
+          <h1 className="page-title">
+            <FileText className="h-7 w-7 text-primary" />
             Employee Hours Report
           </h1>
-          <p className="text-muted-foreground mt-1">
+          <p className="page-description">
             {userRole === "EMPLOYEE"
               ? "View your hours report with flexible date ranges"
               : "View employee hours report with flexible date ranges and filters"}
@@ -1646,131 +1686,73 @@ const EmployeeHoursReport: React.FC = () => {
         </Button>
       </div>
 
-      {/* Filters Card */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Filter className="h-5 w-5" />
-            Filters
-          </CardTitle>
-          <CardDescription>
-            {userRole === "RMG"
-              ? "Select date range to view all employee hours data"
-              : "Select date range and apply filters - report updates automatically"}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {/* Date Range Filter - Always visible */}
-            <div className="space-y-2">
-              <Label htmlFor="dateRange">
-                <Calendar className="h-4 w-4 inline mr-1" />
-                Date Range *
-              </Label>
-              <Select
-                value={dateRangeType}
-                onValueChange={(value) => {
-                  setDateRangeType(value);
-                  if (value !== "custom") {
-                    // Clear month selector when using predefined ranges
-                    setSelectedMonth("");
-                  }
-                }}
-              >
-                <SelectTrigger id="dateRange">
-                  <SelectValue placeholder="Select date range" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="current_week">Current Week</SelectItem>
-                  <SelectItem value="current_month">Current Month</SelectItem>
-                  <SelectItem value="last_3_months">Last 3 Months</SelectItem>
-                  <SelectItem value="last_6_months">Last 6 Months</SelectItem>
-                  <SelectItem value="last_year">Last Year</SelectItem>
-                  <SelectItem value="custom">Custom Range</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Custom Date Range - Only visible when Custom is selected */}
-            {dateRangeType === "custom" && (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="customStartDate">Start Date</Label>
-                  <Input
-                    id="customStartDate"
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    max={format(new Date(), "yyyy-MM-dd")}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="customEndDate">End Date</Label>
-                  <Input
-                    id="customEndDate"
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    max={format(new Date(), "yyyy-MM-dd")}
-                  />
-                </div>
-              </>
-            )}
-
-            {/* Project Filter - Visible for Manager only (removed for RMG) */}
-            {canSeeFilters && userRole !== "RMG" && (
+      {/* Custom Date Range Dialog */}
+      <Dialog
+        open={customDateDialogOpen}
+        onOpenChange={setCustomDateDialogOpen}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Select Custom Date Range</DialogTitle>
+            <DialogDescription>
+              Choose the start and end dates for your report
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="project">Project</Label>
-                <Select
-                  value={selectedProject}
-                  onValueChange={setSelectedProject}
-                >
-                  <SelectTrigger id="project">
-                    <SelectValue placeholder="All Projects" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Projects</SelectItem>
-                    {projects.map((project) => (
-                      <SelectItem key={project._id} value={project.projectId}>
-                        {project.projectCode} - {project.projectName}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="dialogStartDate">Start Date</Label>
+                <Input
+                  id="dialogStartDate"
+                  type="date"
+                  value={tempStartDate}
+                  onChange={(e) => setTempStartDate(e.target.value)}
+                  max={format(new Date(), "yyyy-MM-dd")}
+                />
               </div>
-            )}
-          </div>
-
-          {/* Action Buttons */}
-          {(selectedProject !== "all" ||
-            dateRangeType !== "current_month" ||
-            searchQuery) && (
-            <div className="flex items-center gap-3 mt-4">
+              <div className="space-y-2">
+                <Label htmlFor="dialogEndDate">End Date</Label>
+                <Input
+                  id="dialogEndDate"
+                  type="date"
+                  value={tempEndDate}
+                  onChange={(e) => setTempEndDate(e.target.value)}
+                  max={format(new Date(), "yyyy-MM-dd")}
+                  min={tempStartDate}
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end">
               <Button
                 variant="outline"
                 onClick={() => {
-                  setSelectedProject(userRole === "RMG" ? "" : "all");
+                  setCustomDateDialogOpen(false);
+                  setTempStartDate("");
+                  setTempEndDate("");
                   setDateRangeType("current_month");
-                  setStartDate("");
-                  setEndDate("");
-                  setSearchQuery("");
-                  setCurrentPage(1);
                 }}
               >
-                Clear Filters
+                Cancel
               </Button>
-              <Badge variant="secondary">
-                {dateRangeType === "current_week" && "Current Week"}
-                {dateRangeType === "current_month" && "Current Month"}
-                {dateRangeType === "last_3_months" && "Last 3 Months"}
-                {dateRangeType === "last_6_months" && "Last 6 Months"}
-                {dateRangeType === "last_year" && "Last Year"}
-                {dateRangeType === "custom" && `${startDate} to ${endDate}`}
-              </Badge>
+              <Button
+                onClick={() => {
+                  if (tempStartDate && tempEndDate) {
+                    setStartDate(tempStartDate);
+                    setEndDate(tempEndDate);
+                    setDateRangeType("custom");
+                    setCustomDateDialogOpen(false);
+                  } else {
+                    toast.error("Please select both start and end dates");
+                  }
+                }}
+                disabled={!tempStartDate || !tempEndDate}
+              >
+                Apply
+              </Button>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Search Bar - Only show for RMG/Manager */}
       {canSeeFilters && reportData.length > 0 && (
@@ -1787,250 +1769,330 @@ const EmployeeHoursReport: React.FC = () => {
 
       {/* Analytics & Detailed Report - Tabbed Interface */}
       {reportData.length > 0 && (
-        <Tabs defaultValue="overview" className="space-y-4">
-          <TabsList>
-            <TabsTrigger value="overview" className="gap-2">
-              <PieChartIcon className="h-4 w-4" />
-              Overview & Analytics
-            </TabsTrigger>
-            <TabsTrigger value="details" className="gap-2">
-              <BarChart3 className="h-4 w-4" />
-              Detailed Report
-            </TabsTrigger>
-          </TabsList>
+        <div className="space-y-4">
+          <Tabs
+            value={activeTab}
+            onValueChange={setActiveTab}
+            className="space-y-6"
+          >
+            <div className="flex items-center justify-between gap-4">
+              <TabsList>
+                <TabsTrigger value="overview" className="gap-2">
+                  <PieChartIcon className="h-4 w-4" />
+                  Overview & Analytics
+                </TabsTrigger>
+                <TabsTrigger value="details" className="gap-2">
+                  <BarChart3 className="h-4 w-4" />
+                  Detailed Report
+                </TabsTrigger>
+              </TabsList>
 
-          {/* Overview Tab with Charts */}
-          <TabsContent value="overview" className="space-y-6">
-            {/* Date Range Display - Only for RMG and MANAGER */}
-            {(userRole === "RMG" || userRole === "MANAGER") &&
-              startDate &&
-              endDate && (
-                <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-100">
-                  <CardContent className="pt-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h3 className="text-sm font-semibold text-slate-700 mb-1">
-                          Selected Date Range
-                        </h3>
-                        <p className="text-xs text-slate-500">
-                          {dateRangeType === "current_week" && "Current Week"}\n{" "}
-                          {dateRangeType === "current_month" && "Current Month"}
-                          \n{" "}
-                          {dateRangeType === "last_3_months" && "Last 3 Months"}
-                          \n{" "}
-                          {dateRangeType === "last_6_months" && "Last 6 Months"}
-                          \n {dateRangeType === "last_year" &&
-                            "Last Year"}\n{" "}
-                          {dateRangeType === "custom" && "Custom Range"}
-                        </p>
-                      </div>
-                      <div className="text-center min-w-[200px]">
-                        <div className="text-sm font-bold text-slate-800">
-                          {format(new Date(startDate), "MMM dd, yyyy")} -{" "}
-                          {format(new Date(endDate), "MMM dd, yyyy")}
+              <div className="flex items-center gap-3">
+                <Label htmlFor="dateRangeTop" className="text-sm font-medium">
+                  Date Range:
+                </Label>
+                <Select
+                  value={dateRangeType}
+                  onValueChange={(value) => {
+                    if (value === "custom") {
+                      setTempStartDate(
+                        startDate || format(new Date(), "yyyy-MM-dd"),
+                      );
+                      setTempEndDate(
+                        endDate || format(new Date(), "yyyy-MM-dd"),
+                      );
+                      setCustomDateDialogOpen(true);
+                    } else {
+                      setDateRangeType(value);
+                      setSelectedMonth("");
+                    }
+                  }}
+                >
+                  <SelectTrigger id="dateRangeTop" className="w-[180px]">
+                    <SelectValue placeholder="Select date range">
+                      {dateRangeType === "custom" && startDate && endDate
+                        ? `${format(new Date(startDate), "MMM dd")} - ${format(new Date(endDate), "MMM dd, yyyy")}`
+                        : dateRangeType === "current_week"
+                          ? "Current Week"
+                          : dateRangeType === "current_month"
+                            ? "Current Month"
+                            : dateRangeType === "last_3_months"
+                              ? "Last 3 Months"
+                              : dateRangeType === "last_6_months"
+                                ? "Last 6 Months"
+                                : dateRangeType === "last_year"
+                                  ? "Last Year"
+                                  : "Select date range"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="current_week">Current Week</SelectItem>
+                    <SelectItem value="current_month">Current Month</SelectItem>
+                    <SelectItem value="last_3_months">Last 3 Months</SelectItem>
+                    <SelectItem value="last_6_months">Last 6 Months</SelectItem>
+                    <SelectItem value="last_year">Last Year</SelectItem>
+                    <SelectItem value="custom">Custom Range</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Overview Tab with Charts */}
+            <TabsContent value="overview" className="space-y-6 mt-0">
+              {/* Date Range Display - Only for RMG and MANAGER */}
+              {(userRole === "RMG" || userRole === "MANAGER") &&
+                startDate &&
+                endDate && (
+                  <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-100">
+                    <CardContent className="pt-6">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-sm font-semibold text-slate-700 mb-1">
+                            Selected Date Range
+                          </h3>
+                          <p className="text-xs text-slate-500">
+                            {dateRangeType === "current_week" && "Current Week"}
+                            \n{" "}
+                            {dateRangeType === "current_month" &&
+                              "Current Month"}
+                            \n{" "}
+                            {dateRangeType === "last_3_months" &&
+                              "Last 3 Months"}
+                            \n{" "}
+                            {dateRangeType === "last_6_months" &&
+                              "Last 6 Months"}
+                            \n {dateRangeType === "last_year" && "Last Year"}\n{" "}
+                            {dateRangeType === "custom" && "Custom Range"}
+                          </p>
+                        </div>
+                        <div className="text-center min-w-[200px]">
+                          <div className="text-sm font-bold text-slate-800">
+                            {format(new Date(startDate), "MMM dd, yyyy")} -{" "}
+                            {format(new Date(endDate), "MMM dd, yyyy")}
+                          </div>
                         </div>
                       </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+              {/* Second Row: Allocation Summary and Approval Status - 50% each */}
+              <div className="flex lg:flex-row gap-6 items-stretch">
+                {/* Chart 1: Allocation Summary - 50% */}
+                <Card className="w-[25%] border-none shadow-sm bg-slate-50/50 overflow-hidden flex flex-col">
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <CardTitle className="text-lg font-bold text-slate-800">
+                          Allocation Summary
+                        </CardTitle>
+                        <CardDescription>
+                          Total allocation percentage
+                        </CardDescription>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pt-4 flex-1 flex items-center justify-center">
+                    <AllocationSummaryChart
+                      data={redesignedAllocationSummaryData}
+                      employeeCount={employeeAllocationCounts.total}
+                      allocatedCount={employeeAllocationCounts.allocated}
+                      benchCount={employeeAllocationCounts.bench}
+                      averageProjects={averageAllocatedProjects}
+                    />
+                  </CardContent>
+                </Card>
+                <div className="w-[75%] flex gap-6">
+                  {/* First Row: Project Allocations - Full Width */}
+                  <Card className="w-[65%] border-none shadow-sm bg-slate-50/50 overflow-hidden flex flex-col">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <CardTitle className="text-lg font-bold text-slate-800">
+                            Project Allocations
+                          </CardTitle>
+                          <CardDescription>
+                            Daily allocation timeline for selected month
+                          </CardDescription>
+                        </div>
+
+                        <Badge variant="outline" className="bg-white">
+                          {startDate && endDate
+                            ? `${format(new Date(startDate), "MMM yyyy")}`
+                            : "Select Month"}
+                        </Badge>
+                      </div>
+                    </CardHeader>
+
+                    {/* IMPORTANT: make this flex-col + flex-1 for correct height */}
+                    <CardContent className="pt-4 flex flex-col flex-1">
+                      <div className="w-full min-w-full flex flex-col h-full">
+                        {/* 🔥 BOTTOM ALIGN CHILD USING mt-auto */}
+                        <div className="mt-auto w-full pb-20">
+                          <MonthlyDailyAllocationChart
+                            dailyData={monthlyDailyAllocationData}
+                          />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  {/* Chart 2: Approval Status - 50% */}
+                  <Card className="w-[35%] border-none shadow-sm bg-slate-50/50 overflow-hidden flex flex-col">
+                    <CardHeader className="pb-2">
+                      <div>
+                        <CardTitle className="text-lg font-bold text-slate-800">
+                          Approval Status{" "}
+                          {userRole === "MANAGER" && "(Aggregated)"}
+                        </CardTitle>
+                        <CardDescription>
+                          {userRole === "MANAGER"
+                            ? "Total approval breakdown - see employee details below"
+                            : "Approval lifecycle breakdown"}
+                        </CardDescription>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="pt-4 flex-1">
+                      <ApprovalStatusDoughnut
+                        data={redesignedStatusData}
+                        reportData={reportData}
+                        userRole={userRole}
+                      />
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+
+              {/* Employee-wise Approval Status for MANAGER */}
+              {userRole === "MANAGER" && reportData.length > 0 && (
+                <Card className="mt-6">
+                  <CardHeader>
+                    <CardTitle className="text-lg font-bold text-slate-800">
+                      Employee-wise Approval Status
+                    </CardTitle>
+                    <CardDescription>
+                      Detailed approval breakdown for each employee
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="rounded-md border overflow-x-auto">
+                      <Table className="whitespace-nowrap">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Employee Name</TableHead>
+                            <TableHead className="text-right">
+                              Allocated
+                            </TableHead>
+                            <TableHead className="text-right">
+                              Approved
+                            </TableHead>
+                            <TableHead className="text-right">
+                              Pending
+                            </TableHead>
+                            <TableHead className="text-right">
+                              Revision
+                            </TableHead>
+                            <TableHead className="text-right">
+                              Rejected
+                            </TableHead>
+                            <TableHead className="text-right">
+                              Not Submitted
+                            </TableHead>
+                            <TableHead className="text-center">
+                              Status
+                            </TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {reportData.map((emp) => {
+                            const notSubmitted = Math.max(
+                              0,
+                              emp.allocationHours - emp.actualHours,
+                            );
+                            const rejectedHours = emp.rejectedHours || 0;
+                            const revisionRequestedHours =
+                              emp.revisionRequestedHours || 0;
+                            return (
+                              <TableRow key={emp.employeeId}>
+                                <TableCell className="font-medium">
+                                  {emp.employeeName}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  {emp.allocationHours}h
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <Badge
+                                    variant="outline"
+                                    className="bg-green-50 text-green-700 border-green-200"
+                                  >
+                                    {emp.approvedHours}h
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <Badge
+                                    variant="outline"
+                                    className="bg-orange-50 text-orange-700 border-orange-200"
+                                  >
+                                    {emp.pendingApprovedHours}h
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <Badge
+                                    variant="outline"
+                                    className="bg-amber-50 text-amber-700 border-amber-200"
+                                  >
+                                    {revisionRequestedHours}h
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <Badge
+                                    variant="outline"
+                                    className="bg-red-50 text-red-700 border-red-200"
+                                  >
+                                    {rejectedHours}h
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <Badge
+                                    variant="outline"
+                                    className="bg-slate-50 text-slate-700 border-slate-200"
+                                  >
+                                    {notSubmitted.toFixed(1)}h
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  {emp.approvedHours === emp.allocationHours ? (
+                                    <Badge className="bg-green-500">
+                                      Complete
+                                    </Badge>
+                                  ) : emp.pendingApprovedHours > 0 ? (
+                                    <Badge className="bg-orange-500">
+                                      Pending
+                                    </Badge>
+                                  ) : revisionRequestedHours > 0 ? (
+                                    <Badge className="bg-amber-500">
+                                      Revision
+                                    </Badge>
+                                  ) : rejectedHours > 0 ? (
+                                    <Badge className="bg-red-500">
+                                      Rejected
+                                    </Badge>
+                                  ) : (
+                                    <Badge variant="outline">In Progress</Badge>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
                     </div>
                   </CardContent>
                 </Card>
               )}
 
-            {/* KPI Row: 3 Cards in Single Row - 25%, 50%, 25% Layout */}
-            <div className="flex flex-col lg:flex-row gap-6">
-              {/* Chart 1: Allocation Summary - 25% */}
-              <Card className="border-none shadow-sm bg-slate-50/50 overflow-hidden lg:w-1/4">
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle className="text-lg font-bold text-slate-800">
-                        Allocation Summary
-                      </CardTitle>
-                      <CardDescription>
-                        Total allocation percentage
-                      </CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="pt-4">
-                  <AllocationSummaryChart
-                    data={redesignedAllocationSummaryData}
-                    employeeCount={employeeAllocationCounts.total}
-                    allocatedCount={employeeAllocationCounts.allocated}
-                    benchCount={employeeAllocationCounts.bench}
-                    averageProjects={averageAllocatedProjects}
-                  />
-                </CardContent>
-              </Card>
-
-              {/* Chart 2: Project Allocations - Monthly Daily View - 50% */}
-              <Card className="border-none shadow-sm bg-slate-50/50 overflow-hidden lg:w-1/2">
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle className="text-lg font-bold text-slate-800">
-                        Project Allocations
-                      </CardTitle>
-                      <CardDescription>
-                        Daily allocation timeline for selected month
-                      </CardDescription>
-                    </div>
-                    <Badge variant="outline" className="bg-white">
-                      {startDate && endDate
-                        ? `${format(new Date(startDate), "MMM yyyy")}`
-                        : "Select Month"}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="pt-4">
-                  <MonthlyDailyAllocationChart
-                    dailyData={monthlyDailyAllocationData}
-                  />
-                </CardContent>
-              </Card>
-
-              {/* Chart 3: Approval Status - 25% */}
-              <Card className="border-none shadow-sm bg-slate-50/50 overflow-hidden lg:w-1/4">
-                <CardHeader className="pb-2">
-                  <div>
-                    <CardTitle className="text-lg font-bold text-slate-800">
-                      Approval Status {userRole === "MANAGER" && "(Aggregated)"}
-                    </CardTitle>
-                    <CardDescription>
-                      {userRole === "MANAGER"
-                        ? "Total approval breakdown - see employee details below"
-                        : "Approval lifecycle breakdown"}
-                    </CardDescription>
-                  </div>
-                </CardHeader>
-                <CardContent className="pt-4">
-                  <ApprovalStatusDoughnut
-                    data={redesignedStatusData}
-                    reportData={reportData}
-                    userRole={userRole}
-                  />
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Employee-wise Approval Status for MANAGER */}
-            {userRole === "MANAGER" && reportData.length > 0 && (
-              <Card className="mt-6">
-                <CardHeader>
-                  <CardTitle className="text-lg font-bold text-slate-800">
-                    Employee-wise Approval Status
-                  </CardTitle>
-                  <CardDescription>
-                    Detailed approval breakdown for each employee
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="rounded-md border overflow-x-auto">
-                    <Table className="whitespace-nowrap">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Employee Name</TableHead>
-                          <TableHead className="text-right">
-                            Allocated
-                          </TableHead>
-                          <TableHead className="text-right">Approved</TableHead>
-                          <TableHead className="text-right">Pending</TableHead>
-                          <TableHead className="text-right">Revision</TableHead>
-                          <TableHead className="text-right">Rejected</TableHead>
-                          <TableHead className="text-right">
-                            Not Submitted
-                          </TableHead>
-                          <TableHead className="text-center">Status</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {reportData.map((emp) => {
-                          const notSubmitted = Math.max(
-                            0,
-                            emp.allocationHours - emp.actualHours,
-                          );
-                          const rejectedHours = emp.rejectedHours || 0;
-                          const revisionRequestedHours =
-                            emp.revisionRequestedHours || 0;
-                          return (
-                            <TableRow key={emp.employeeId}>
-                              <TableCell className="font-medium">
-                                {emp.employeeName}
-                              </TableCell>
-                              <TableCell className="text-right">
-                                {emp.allocationHours}h
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <Badge
-                                  variant="outline"
-                                  className="bg-green-50 text-green-700 border-green-200"
-                                >
-                                  {emp.approvedHours}h
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <Badge
-                                  variant="outline"
-                                  className="bg-orange-50 text-orange-700 border-orange-200"
-                                >
-                                  {emp.pendingApprovedHours}h
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <Badge
-                                  variant="outline"
-                                  className="bg-amber-50 text-amber-700 border-amber-200"
-                                >
-                                  {revisionRequestedHours}h
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <Badge
-                                  variant="outline"
-                                  className="bg-red-50 text-red-700 border-red-200"
-                                >
-                                  {rejectedHours}h
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <Badge
-                                  variant="outline"
-                                  className="bg-slate-50 text-slate-700 border-slate-200"
-                                >
-                                  {notSubmitted.toFixed(1)}h
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-center">
-                                {emp.approvedHours === emp.allocationHours ? (
-                                  <Badge className="bg-green-500">
-                                    Complete
-                                  </Badge>
-                                ) : emp.pendingApprovedHours > 0 ? (
-                                  <Badge className="bg-orange-500">
-                                    Pending
-                                  </Badge>
-                                ) : revisionRequestedHours > 0 ? (
-                                  <Badge className="bg-amber-500">
-                                    Revision
-                                  </Badge>
-                                ) : rejectedHours > 0 ? (
-                                  <Badge className="bg-red-500">Rejected</Badge>
-                                ) : (
-                                  <Badge variant="outline">In Progress</Badge>
-                                )}
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Weekly Timesheet View - Full Component */}
-            <div className="mt-6">
-              <style>{`
+              {/* Weekly Timesheet View - Full Component */}
+              <div className="mt-6">
+                <style>{`
                 /* Hide Weekly Timesheet header, description, tabs, and action buttons for report view */
                 /* Hide the main header title and description */
                 .weekly-timesheet-report-view .page-header-content h1,
@@ -2039,8 +2101,10 @@ const EmployeeHoursReport: React.FC = () => {
                   display: none !important;
                 }
                 
-                /* Show tabs for RMG/MANAGER so they can switch to Approvals tab */
-                /* Tabs will remain visible for navigation */
+                /* Hide My Timesheet and Approval tabs in report view */
+                .weekly-timesheet-report-view [role="tablist"] {
+                  display: none !important;
+                }
                 
                 /* Hide all action buttons in the tabs row */
                 .weekly-timesheet-report-view .flex.items-center.gap-3 button {
@@ -2071,230 +2135,238 @@ const EmployeeHoursReport: React.FC = () => {
                   cursor: not-allowed;
                 }
               `}</style>
-              <div className="weekly-timesheet-report-view">
-                <WeeklyTimesheet />
+                <div className="weekly-timesheet-report-view">
+                  <WeeklyTimesheet
+                    initialDate={
+                      startDate
+                        ? startOfWeek(new Date(startDate), { weekStartsOn: 1 })
+                        : new Date()
+                    }
+                    isReportView={true}
+                  />
+                </div>
               </div>
-            </div>
-          </TabsContent>
-          {/* Details Tab with Table */}
-          <TabsContent value="details" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Detailed Report</CardTitle>
-                <CardDescription>
-                  {startDate && endDate
-                    ? `${format(new Date(startDate), "MMMM dd, yyyy")} - ${format(new Date(endDate), "MMMM dd, yyyy")}`
-                    : "Select a date range to view report"}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {isLoading && (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                  </div>
-                )}
+            </TabsContent>
+            {/* Details Tab with Table */}
+            <TabsContent value="details" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Detailed Report</CardTitle>
+                  <CardDescription>
+                    {startDate && endDate
+                      ? `${format(new Date(startDate), "MMMM dd, yyyy")} - ${format(new Date(endDate), "MMMM dd, yyyy")}`
+                      : "Select a date range to view report"}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {isLoading && (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    </div>
+                  )}
 
-                {!isLoading && reportData.length === 0 && (
-                  <div className="flex flex-col items-center justify-center py-12 text-center">
-                    <FileText className="h-16 w-16 text-muted-foreground mb-4" />
-                    <h3 className="text-lg font-semibold mb-2">
-                      No data available
-                    </h3>
-                    <p className="text-muted-foreground">
-                      No hours data found for the selected month
-                    </p>
-                  </div>
-                )}
-
-                {!isLoading &&
-                  reportData.length > 0 &&
-                  paginatedData.length === 0 && (
+                  {!isLoading && reportData.length === 0 && (
                     <div className="flex flex-col items-center justify-center py-12 text-center">
-                      <Search className="h-16 w-16 text-muted-foreground mb-4" />
+                      <FileText className="h-16 w-16 text-muted-foreground mb-4" />
                       <h3 className="text-lg font-semibold mb-2">
-                        No results found
+                        No data available
                       </h3>
                       <p className="text-muted-foreground">
-                        Try adjusting your search query
+                        No hours data found for the selected month
                       </p>
                     </div>
                   )}
 
-                {!isLoading && paginatedData.length > 0 && (
-                  <>
-                    <div className="rounded-md border overflow-x-auto">
-                      <Table className="whitespace-nowrap">
-                        <TableHeader>
-                          <TableRow>
-                            {canSeeFilters && (
-                              <>
-                                <TableHead>Employee ID</TableHead>
-                                <TableHead>Name</TableHead>
-                                <TableHead>Department</TableHead>
-                              </>
-                            )}
-                            <TableHead className="text-right">
-                              Allocation
-                            </TableHead>
-                            <TableHead className="text-right">
-                              Actual Billable
-                            </TableHead>
-                            <TableHead className="text-right">
-                              Actual Non-Billable
-                            </TableHead>
-                            <TableHead className="text-right">
-                              Billable Approved
-                            </TableHead>
-                            <TableHead className="text-right">
-                              Non-Billable Approved
-                            </TableHead>
-                            <TableHead className="text-right">
-                              Actual Hours
-                            </TableHead>
-                            <TableHead className="text-right">
-                              Approved Hours
-                            </TableHead>
-                            <TableHead className="text-right">
-                              Pending Approved
-                            </TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {paginatedData.map((emp) => (
-                            <TableRow key={emp.employeeId}>
-                              {canSeeFilters && (
-                                <>
-                                  <TableCell className="font-mono text-sm whitespace-nowrap">
-                                    {emp.employeeId}
-                                  </TableCell>
-                                  <TableCell className="font-medium whitespace-nowrap">
-                                    {emp.employeeName}
-                                  </TableCell>
-                                  <TableCell className="whitespace-nowrap">
-                                    {emp.department || "-"}
-                                  </TableCell>
-                                </>
-                              )}
-                              <TableCell className="text-right whitespace-nowrap">
-                                {emp.allocationHours}
-                              </TableCell>
-                              <TableCell className="text-right text-blue-600 font-semibold whitespace-nowrap">
-                                {emp.actualBillableHours}
-                              </TableCell>
-                              <TableCell className="text-right text-orange-600 font-semibold whitespace-nowrap">
-                                {emp.actualNonBillableHours}
-                              </TableCell>
-                              <TableCell className="text-right text-green-600 font-semibold whitespace-nowrap">
-                                {emp.billableApprovedHours}
-                              </TableCell>
-                              <TableCell className="text-right text-emerald-600 font-semibold whitespace-nowrap">
-                                {emp.nonBillableApprovedHours}
-                              </TableCell>
-                              <TableCell className="text-right text-indigo-600 font-bold whitespace-nowrap">
-                                {emp.actualHours}
-                              </TableCell>
-                              <TableCell className="text-right text-teal-600 font-bold whitespace-nowrap">
-                                {emp.approvedHours}
-                              </TableCell>
-                              <TableCell className="text-right text-yellow-600 font-bold whitespace-nowrap">
-                                <div className="flex items-center justify-end gap-2">
-                                  <span>{emp.pendingApprovedHours}</span>
-                                  <Popover>
-                                    <PopoverTrigger asChild>
-                                      <button
-                                        type="button"
-                                        className="p-1 rounded hover:bg-yellow-50 text-yellow-600"
-                                        aria-label="View pending details"
-                                      >
-                                        <Info className="h-4 w-4" />
-                                      </button>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="w-72">
-                                      <div className="text-sm font-semibold mb-2">
-                                        Pending details
-                                      </div>
-                                      {emp.pendingDetails &&
-                                      emp.pendingDetails.length > 0 ? (
-                                        <div className="space-y-3 max-h-60 overflow-auto">
-                                          {emp.pendingDetails.map(
-                                            (item, index) => (
-                                              <div
-                                                key={`${emp.employeeId}-${index}`}
-                                                className="text-xs"
-                                              >
-                                                <div className="font-semibold text-slate-700">
-                                                  {format(
-                                                    new Date(item.date),
-                                                    "dd MMM yyyy",
-                                                  )}
-                                                </div>
-                                                <div className="text-slate-500">
-                                                  {item.projectName} (
-                                                  {item.projectId})
-                                                </div>
-                                                <div className="text-slate-500">
-                                                  Manager:{" "}
-                                                  {item.projectManagerName}
-                                                </div>
-                                              </div>
-                                            ),
-                                          )}
-                                        </div>
-                                      ) : (
-                                        <div className="text-xs text-slate-500">
-                                          No pending entries
-                                        </div>
-                                      )}
-                                    </PopoverContent>
-                                  </Popover>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-
-                    {/* Pagination */}
-                    {totalPages > 1 && (
-                      <div className="flex items-center justify-between mt-4">
-                        <p className="text-sm text-muted-foreground">
-                          Showing {(currentPage - 1) * itemsPerPage + 1} to{" "}
-                          {Math.min(
-                            currentPage * itemsPerPage,
-                            filteredData.length,
-                          )}{" "}
-                          of {filteredData.length} employees
+                  {!isLoading &&
+                    reportData.length > 0 &&
+                    paginatedData.length === 0 && (
+                      <div className="flex flex-col items-center justify-center py-12 text-center">
+                        <Search className="h-16 w-16 text-muted-foreground mb-4" />
+                        <h3 className="text-lg font-semibold mb-2">
+                          No results found
+                        </h3>
+                        <p className="text-muted-foreground">
+                          Try adjusting your search query
                         </p>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setCurrentPage(currentPage - 1)}
-                            disabled={currentPage === 1}
-                          >
-                            Previous
-                          </Button>
-                          <span className="text-sm">
-                            Page {currentPage} of {totalPages}
-                          </span>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setCurrentPage(currentPage + 1)}
-                            disabled={currentPage === totalPages}
-                          >
-                            Next
-                          </Button>
-                        </div>
                       </div>
                     )}
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+
+                  {!isLoading && paginatedData.length > 0 && (
+                    <>
+                      <div className="rounded-md border overflow-x-auto">
+                        <Table className="whitespace-nowrap">
+                          <TableHeader>
+                            <TableRow>
+                              {canSeeFilters && (
+                                <>
+                                  <TableHead>Employee ID</TableHead>
+                                  <TableHead>Name</TableHead>
+                                  <TableHead>Department</TableHead>
+                                </>
+                              )}
+                              <TableHead className="text-right">
+                                Allocation
+                              </TableHead>
+                              <TableHead className="text-right">
+                                Actual Billable
+                              </TableHead>
+                              <TableHead className="text-right">
+                                Actual Non-Billable
+                              </TableHead>
+                              <TableHead className="text-right">
+                                Billable Approved
+                              </TableHead>
+                              <TableHead className="text-right">
+                                Non-Billable Approved
+                              </TableHead>
+                              <TableHead className="text-right">
+                                Actual Hours
+                              </TableHead>
+                              <TableHead className="text-right">
+                                Approved Hours
+                              </TableHead>
+                              <TableHead className="text-right">
+                                Pending Approved
+                              </TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {paginatedData.map((emp) => (
+                              <TableRow key={emp.employeeId}>
+                                {canSeeFilters && (
+                                  <>
+                                    <TableCell className="font-mono text-sm whitespace-nowrap">
+                                      {emp.employeeId}
+                                    </TableCell>
+                                    <TableCell className="font-medium whitespace-nowrap">
+                                      {emp.employeeName}
+                                    </TableCell>
+                                    <TableCell className="whitespace-nowrap">
+                                      {emp.department || "-"}
+                                    </TableCell>
+                                  </>
+                                )}
+                                <TableCell className="text-right whitespace-nowrap">
+                                  {emp.allocationHours}
+                                </TableCell>
+                                <TableCell className="text-right text-blue-600 font-semibold whitespace-nowrap">
+                                  {emp.actualBillableHours}
+                                </TableCell>
+                                <TableCell className="text-right text-orange-600 font-semibold whitespace-nowrap">
+                                  {emp.actualNonBillableHours}
+                                </TableCell>
+                                <TableCell className="text-right text-green-600 font-semibold whitespace-nowrap">
+                                  {emp.billableApprovedHours}
+                                </TableCell>
+                                <TableCell className="text-right text-emerald-600 font-semibold whitespace-nowrap">
+                                  {emp.nonBillableApprovedHours}
+                                </TableCell>
+                                <TableCell className="text-right text-indigo-600 font-bold whitespace-nowrap">
+                                  {emp.actualHours}
+                                </TableCell>
+                                <TableCell className="text-right text-teal-600 font-bold whitespace-nowrap">
+                                  {emp.approvedHours}
+                                </TableCell>
+                                <TableCell className="text-right text-yellow-600 font-bold whitespace-nowrap">
+                                  <div className="flex items-center justify-end gap-2">
+                                    <span>{emp.pendingApprovedHours}</span>
+                                    <Popover>
+                                      <PopoverTrigger asChild>
+                                        <button
+                                          type="button"
+                                          className="p-1 rounded hover:bg-yellow-50 text-yellow-600"
+                                          aria-label="View pending details"
+                                        >
+                                          <Info className="h-4 w-4" />
+                                        </button>
+                                      </PopoverTrigger>
+                                      <PopoverContent className="w-72">
+                                        <div className="text-sm font-semibold mb-2">
+                                          Pending details
+                                        </div>
+                                        {emp.pendingDetails &&
+                                        emp.pendingDetails.length > 0 ? (
+                                          <div className="space-y-3 max-h-60 overflow-auto">
+                                            {emp.pendingDetails.map(
+                                              (item, index) => (
+                                                <div
+                                                  key={`${emp.employeeId}-${index}`}
+                                                  className="text-xs"
+                                                >
+                                                  <div className="font-semibold text-slate-700">
+                                                    {format(
+                                                      new Date(item.date),
+                                                      "dd MMM yyyy",
+                                                    )}
+                                                  </div>
+                                                  <div className="text-slate-500">
+                                                    {item.projectName} (
+                                                    {item.projectId})
+                                                  </div>
+                                                  <div className="text-slate-500">
+                                                    Manager:{" "}
+                                                    {item.projectManagerName}
+                                                  </div>
+                                                </div>
+                                              ),
+                                            )}
+                                          </div>
+                                        ) : (
+                                          <div className="text-xs text-slate-500">
+                                            No pending entries
+                                          </div>
+                                        )}
+                                      </PopoverContent>
+                                    </Popover>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+
+                      {/* Pagination */}
+                      {totalPages > 1 && (
+                        <div className="flex items-center justify-between mt-4">
+                          <p className="text-sm text-muted-foreground">
+                            Showing {(currentPage - 1) * itemsPerPage + 1} to{" "}
+                            {Math.min(
+                              currentPage * itemsPerPage,
+                              filteredData.length,
+                            )}{" "}
+                            of {filteredData.length} employees
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setCurrentPage(currentPage - 1)}
+                              disabled={currentPage === 1}
+                            >
+                              Previous
+                            </Button>
+                            <span className="text-sm">
+                              Page {currentPage} of {totalPages}
+                            </span>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setCurrentPage(currentPage + 1)}
+                              disabled={currentPage === totalPages}
+                            >
+                              Next
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
+        </div>
       )}
 
       {/* Empty State when no data */}

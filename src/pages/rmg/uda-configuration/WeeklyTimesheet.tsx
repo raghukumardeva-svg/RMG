@@ -132,7 +132,15 @@ interface TimesheetRow {
   })[];
 }
 
-const WeeklyTimesheet: React.FC = () => {
+interface WeeklyTimesheetProps {
+  initialDate?: Date;
+  isReportView?: boolean;
+}
+
+const WeeklyTimesheet: React.FC<WeeklyTimesheetProps> = ({
+  initialDate,
+  isReportView = false,
+}) => {
   const {
     configurations,
     fetchConfigurations,
@@ -144,7 +152,7 @@ const WeeklyTimesheet: React.FC = () => {
   const { user } = useAuthStore();
   const { holidays, fetchHolidays } = useHolidayStore();
 
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [currentDate, setCurrentDate] = useState(initialDate || new Date());
   const [rows, setRows] = useState<TimesheetRow[]>([]);
   const [isAddEntryOpen, setIsAddEntryOpen] = useState(false);
   const [timesheetStatus, setTimesheetStatus] = useState<
@@ -493,6 +501,13 @@ const WeeklyTimesheet: React.FC = () => {
     projectCatalogList,
     allocationDateMap,
   ]);
+
+  // Sync initialDate prop changes with currentDate state
+  useEffect(() => {
+    if (initialDate && isReportView) {
+      setCurrentDate(initialDate);
+    }
+  }, [initialDate, isReportView]);
 
   // Fetch projects where logged-in user is the project manager (for approval mode)
   useEffect(() => {
@@ -3786,23 +3801,41 @@ const WeeklyTimesheet: React.FC = () => {
 
                       {rows.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-[400px] text-slate-400">
-                          <div className="bg-slate-50 p-10 rounded-full border-4 border-dashed border-slate-200 mb-6 rotate-3">
-                            <LayoutGrid className="h-16 w-16 text-slate-200" />
-                          </div>
-                          <h3 className="text-xl font-black text-slate-800 tracking-tight mb-2">
-                            Ready to log your time?
-                          </h3>
-                          <p className="text-sm font-medium text-slate-500 max-w-[300px] text-center mb-8">
-                            Click the add button above to start tracking your
-                            project allocations and activities.
-                          </p>
-                          {!isFutureWeek && (
-                            <Button
-                              onClick={() => setIsAddEntryOpen(true)}
-                              className="rounded-xl h-12 px-8 font-black text-xs uppercase tracking-widest bg-primary"
-                            >
-                              Start Log Now
-                            </Button>
+                          {isReportView ? (
+                            <>
+                              <div className="bg-slate-50 p-10 rounded-full border-4 border-dashed border-slate-200 mb-6">
+                                <LayoutGrid className="h-16 w-16 text-slate-200" />
+                              </div>
+                              <h3 className="text-xl font-black text-slate-800 tracking-tight mb-2">
+                                Timesheet Not Found
+                              </h3>
+                              <p className="text-sm font-medium text-slate-500 max-w-[350px] text-center">
+                                No timesheet entries found for the selected
+                                week. The employee may not have logged any hours
+                                during this period.
+                              </p>
+                            </>
+                          ) : (
+                            <>
+                              <div className="bg-slate-50 p-10 rounded-full border-4 border-dashed border-slate-200 mb-6 rotate-3">
+                                <LayoutGrid className="h-16 w-16 text-slate-200" />
+                              </div>
+                              <h3 className="text-xl font-black text-slate-800 tracking-tight mb-2">
+                                Ready to log your time?
+                              </h3>
+                              <p className="text-sm font-medium text-slate-500 max-w-[300px] text-center mb-8">
+                                Click the add button above to start tracking
+                                your project allocations and activities.
+                              </p>
+                              {!isFutureWeek && (
+                                <Button
+                                  onClick={() => setIsAddEntryOpen(true)}
+                                  className="rounded-xl h-12 px-8 font-black text-xs uppercase tracking-widest bg-primary"
+                                >
+                                  Start Log Now
+                                </Button>
+                              )}
+                            </>
                           )}
                         </div>
                       ) : (

@@ -76,7 +76,7 @@ class EmployeeHoursReportService {
 
         if (filters.employeeId) params.append('employeeId', filters.employeeId);
         params.append('role', filters.role);
-        params.append('month', filters.month);
+        if (filters.month) params.append('month', filters.month);
         if (filters.projectId) params.append('projectId', filters.projectId);
         if (filters.startDate) params.append('startDate', filters.startDate);
         if (filters.endDate) params.append('endDate', filters.endDate);
