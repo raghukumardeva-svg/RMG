@@ -13,6 +13,8 @@ export interface EmployeeHoursData {
     actualHours: number;
     approvedHours: number;
     pendingApprovedHours: number;
+    rejectedHours: number;
+    revisionRequestedHours: number;
     pendingDetails: {
         date: string;
         projectId: string;
@@ -30,6 +32,8 @@ export interface ReportSummary {
     totalActualHours: number;
     totalApprovedHours: number;
     totalPendingApprovedHours: number;
+    totalRejectedHours: number;
+    totalRevisionRequestedHours: number;
 }
 
 export interface EmployeeHoursReportResponse {
@@ -55,7 +59,7 @@ export interface ProjectOption {
 export interface ReportFilters {
     employeeId?: string;
     role: 'EMPLOYEE' | 'RMG' | 'MANAGER';
-    month: string; // Format: YYYY-MM
+    month?: string; // Format: YYYY-MM (optional when using date ranges)
     projectId?: string;
     startDate?: string;
     endDate?: string;

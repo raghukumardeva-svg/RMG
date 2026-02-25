@@ -20,6 +20,8 @@ import {
   UserX,
   Check,
   ChevronsUpDown,
+  Bell,
+  Loader2,
 } from "lucide-react";
 import {
   format,
@@ -190,6 +192,9 @@ const WeeklyTimesheet: React.FC = () => {
     "All" | "Billable" | "Non-Billable"
   >("All");
   const [isColorGuideOpen, setIsColorGuideOpen] = useState(false);
+  // Validation dialog state for 8-hour check
+  const [validationDialogOpen, setValidationDialogOpen] = useState(false);
+  const [invalidDaysList, setInvalidDaysList] = useState<string[]>([]);
   // Rejection dialog state
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectComment, setRejectComment] = useState("");
@@ -212,6 +217,11 @@ const WeeklyTimesheet: React.FC = () => {
   // Track entries that are explicitly unchecked even when employee is checked
   // Key format: "employeeId-entryIndex"
   const [uncheckedEntries, setUncheckedEntries] = useState<Set<string>>(
+    new Set(),
+  );
+  // Track which projects are expanded in approval view
+  // Key format: "employeeId-projectId"
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(
     new Set(),
   );
   // Track which category sections are expanded (accordion state)
@@ -280,11 +290,22 @@ const WeeklyTimesheet: React.FC = () => {
       string,
       { start?: Date | string; end?: Date | string }
     >();
+    console.log(
+      "[Allocation Map] Building map from FL resources:",
+      userFlResources.length,
+    );
     userFlResources.forEach((fl) => {
-      if (!fl?.projectId) return;
-      map.set(fl.projectId, {
-        start: fl.startDate || fl.requestedFromDate,
-        end: fl.endDate || fl.requestedToDate,
+      // Use projectId or projectOid as key, matching how projects are identified elsewhere
+      const key = fl.projectId || fl.projectOid;
+      if (!key) return;
+      const startDate = fl.startDate || fl.requestedFromDate;
+      const endDate = fl.endDate || fl.requestedToDate;
+      console.log(
+        `[Allocation Map] Project: ${key}, Start: ${startDate}, End: ${endDate}`,
+      );
+      map.set(key, {
+        start: startDate,
+        end: endDate,
       });
     });
     return map;
@@ -375,21 +396,68 @@ const WeeklyTimesheet: React.FC = () => {
     const activeProjects = projectsToFilter.filter((p) => {
       if (!isProjectActive(p)) return false;
 
+      // Check allocation dates from FL resources
       const allocationDates = allocationDateMap.get(p.projectId || p._id);
-      if (allocationDates?.start) {
-        const allocStart = new Date(allocationDates.start);
-        allocStart.setHours(0, 0, 0, 0);
-        if (weekEnd < allocStart) {
-          return false;
-        }
-      }
+      if (allocationDates) {
+        const allocStart = allocationDates.start
+          ? new Date(allocationDates.start)
+          : null;
+        const allocEnd = allocationDates.end
+          ? new Date(allocationDates.end)
+          : null;
 
-      if (allocationDates?.end) {
-        const allocEnd = new Date(allocationDates.end);
-        allocEnd.setHours(0, 0, 0, 0);
-        if (allocEnd < weekStart) {
-          return false;
+        if (allocStart) {
+          allocStart.setHours(0, 0, 0, 0);
         }
+        if (allocEnd) {
+          allocEnd.setHours(23, 59, 59, 999);
+        }
+
+        console.log(
+          `[Project Filter] Project: ${p.projectId}, Allocation: ${allocStart?.toISOString()} to ${allocEnd?.toISOString()}, Week: ${weekStart.toISOString()} to ${weekEnd.toISOString()}`,
+        );
+
+        // Check if week overlaps with allocation period
+        // Week must start on or before allocation end AND end on or after allocation start
+        if (allocStart && allocEnd) {
+          // If week starts after allocation ends, hide project
+          if (weekStart > allocEnd) {
+            console.log(
+              `[Project Filter] Hiding ${p.projectId} - week starts after allocation ends`,
+            );
+            return false;
+          }
+          // If week ends before allocation starts, hide project
+          if (weekEnd < allocStart) {
+            console.log(
+              `[Project Filter] Hiding ${p.projectId} - week ends before allocation starts`,
+            );
+            return false;
+          }
+        } else if (allocStart && !allocEnd) {
+          // Only start date available - show if week is after start
+          if (weekEnd < allocStart) {
+            console.log(
+              `[Project Filter] Hiding ${p.projectId} - week ends before allocation starts (no end date)`,
+            );
+            return false;
+          }
+        } else if (!allocStart && allocEnd) {
+          // Only end date available - show if week is before end
+          if (weekStart > allocEnd) {
+            console.log(
+              `[Project Filter] Hiding ${p.projectId} - week starts after allocation ends (no start date)`,
+            );
+            return false;
+          }
+        }
+        console.log(
+          `[Project Filter] Showing ${p.projectId} - week overlaps with allocation`,
+        );
+      } else {
+        console.log(
+          `[Project Filter] No allocation dates found for project ${p.projectId}`,
+        );
       }
 
       // Hide project if end date is before the start of the current week
@@ -1152,7 +1220,7 @@ const WeeklyTimesheet: React.FC = () => {
       }
 
       setAllocatedProjects(projects);
-    } catch (error) {
+    } catch (error: any) {
       console.error("❌ Failed to fetch allocated projects:", error);
 
       // Log detailed error information
@@ -1161,9 +1229,16 @@ const WeeklyTimesheet: React.FC = () => {
         console.error(`   Error stack: ${error.stack}`);
       }
 
-      toast.error(
-        `Failed to load allocated projects: ${error instanceof Error ? error.message : "Unknown error"}`,
-      );
+      // Handle 429 rate limiting error
+      if (error?.response?.status === 429) {
+        toast.error("Too many requests. Please wait a moment and try again.", {
+          duration: 5000,
+        });
+      } else {
+        toast.error(
+          `Failed to load allocated projects: ${error instanceof Error ? error.message : "Unknown error"}`,
+        );
+      }
       setAllocatedProjects([]);
     }
   }, [user?.employeeId, projectCatalogList]);
@@ -1569,14 +1644,9 @@ const WeeklyTimesheet: React.FC = () => {
         // Filter out placeholder rows
         if (row.udaName === "Select UDA") return false;
 
-        // Only show categories that have hours entered for this specific day
-        const hoursForDay = row.hours[dayIndex];
-        return (
-          hoursForDay &&
-          hoursForDay !== "00:00" &&
-          hoursForDay !== "0:00" &&
-          hoursForDay !== "0"
-        );
+        // Show all categories for this project, not just those with hours
+        // This allows users to add hours to empty categories
+        return true;
       })
       .map((row) => ({
         rowId: row.id,
@@ -1588,7 +1658,19 @@ const WeeklyTimesheet: React.FC = () => {
         hours: row.hours[dayIndex],
         comment: row.comments[dayIndex],
         entryMeta: row.entryMeta?.[dayIndex],
-      }));
+      }))
+      .filter((cat) => {
+        // Only show categories that either:
+        // 1. Have hours entered for this day, OR
+        // 2. Are not approved (so users can add hours to them)
+        const hasHours =
+          cat.hours &&
+          cat.hours !== "00:00" &&
+          cat.hours !== "0:00" &&
+          cat.hours !== "0";
+        const isApproved = cat.entryMeta?.approvalStatus === "approved";
+        return hasHours || !isApproved;
+      });
 
     setCategoryDialogData({
       projectId: projectGroup.projectId,
@@ -1698,13 +1780,53 @@ const WeeklyTimesheet: React.FC = () => {
       return;
     }
 
-    // Validate that all rows have at least some hours
-    const hasHours = rows.some((row) =>
-      row.hours.some((h) => h && h !== "00:00" && h !== "0:00"),
+    // Check if there are any non-approved entries to submit
+    const hasNonApprovedHours = rows.some((row) =>
+      row.hours.some((h, dayIdx) => {
+        const isApproved =
+          row.entryMeta?.[dayIdx]?.approvalStatus === "approved";
+        return !isApproved && h && h !== "00:00" && h !== "0:00";
+      }),
     );
 
-    if (!hasHours) {
-      toast.error("Please enter hours before submitting");
+    if (!hasNonApprovedHours) {
+      toast.error("No non-approved entries to submit");
+      return;
+    }
+
+    // Validate that each filled NON-APPROVED day has at least 8 hours
+    const dayTotals = new Array(7).fill(0);
+    const dayHasNonApprovedEntries = new Array(7).fill(false);
+
+    rows.forEach((row) => {
+      row.hours.forEach((hours, dayIndex) => {
+        const isApproved =
+          row.entryMeta?.[dayIndex]?.approvalStatus === "approved";
+
+        if (!isApproved && hours && hours !== "00:00" && hours !== "0:00") {
+          dayHasNonApprovedEntries[dayIndex] = true;
+          const minutes = parseTimeToMinutes(hours);
+          if (minutes) {
+            dayTotals[dayIndex] += minutes;
+          }
+        }
+      });
+    });
+
+    // Check each filled day for minimum 8 hours (480 minutes)
+    // Only validate days that have non-approved entries
+    const invalidDays: string[] = [];
+    dayTotals.forEach((totalMinutes, dayIndex) => {
+      if (dayHasNonApprovedEntries[dayIndex] && totalMinutes < 480) {
+        const dayName = format(weekDays[dayIndex], "EEEE (MMM dd)");
+        const hoursWorked = formatMinutesToTime(totalMinutes);
+        invalidDays.push(`${dayName}: ${hoursWorked}`);
+      }
+    });
+
+    if (invalidDays.length > 0) {
+      setInvalidDaysList(invalidDays);
+      setValidationDialogOpen(true);
       return;
     }
 
@@ -1713,26 +1835,54 @@ const WeeklyTimesheet: React.FC = () => {
       const weekStart = format(startDate, "yyyy-MM-dd");
       const weekEnd = format(endDate, "yyyy-MM-dd");
 
-      // Prepare rows data by removing client-side id
-      const preparedRows = rows.map(({ id, ...row }) => ({
-        projectId: row.projectId || "N/A",
-        projectCode: row.projectCode,
-        projectName: row.projectName,
-        udaId: row.udaId,
-        udaName: row.udaName,
-        type: row.type || "General",
-        financialLineItem: row.financialLineItem,
-        billable: row.billable,
-        hours: row.hours,
-        comments: row.comments,
-      }));
+      // Filter rows to only include non-approved entries
+      const preparedRows = rows
+        .map(({ id, ...row }) => {
+          // For each day, check if it's approved
+          const filteredHours = row.hours.map((h, dayIdx) => {
+            const isApproved =
+              row.entryMeta?.[dayIdx]?.approvalStatus === "approved";
+            // If approved, set to "00:00" to skip submitting
+            return isApproved ? "00:00" : h;
+          });
+
+          const filteredComments = row.comments.map((c, dayIdx) => {
+            const isApproved =
+              row.entryMeta?.[dayIdx]?.approvalStatus === "approved";
+            // If approved, clear comment to skip submitting
+            return isApproved ? "" : c;
+          });
+
+          // Check if this row has any non-approved hours
+          const hasNonApprovedHours = filteredHours.some(
+            (h) => h && h !== "00:00" && h !== "0:00",
+          );
+
+          if (!hasNonApprovedHours) {
+            return null; // Skip this row entirely if all days are approved
+          }
+
+          return {
+            projectId: row.projectId || "N/A",
+            projectCode: row.projectCode,
+            projectName: row.projectName,
+            udaId: row.udaId,
+            udaName: row.udaName,
+            type: row.type || "General",
+            financialLineItem: row.financialLineItem,
+            billable: row.billable,
+            hours: filteredHours,
+            comments: filteredComments,
+          };
+        })
+        .filter(Boolean); // Remove null entries
 
       const payload = {
         employeeId: user.employeeId,
         employeeName: user.name,
         weekStartDate: weekStart,
         weekEndDate: weekEnd,
-        rows: preparedRows,
+        rows: preparedRows as any,
         status: "submitted" as const,
         totalHours: 0, // Will be calculated on backend
       };
@@ -1769,7 +1919,15 @@ const WeeklyTimesheet: React.FC = () => {
         }
       }
 
-      setTimesheetStatus("submitted");
+      // Only set status to submitted if there are no more approved entries
+      // If there are still approved entries, keep the mixed status
+      const hasApprovedEntries = rows.some((row) =>
+        row.entryMeta?.some((meta) => meta?.approvalStatus === "approved"),
+      );
+
+      if (!hasApprovedEntries) {
+        setTimesheetStatus("submitted");
+      }
       setHasSubmittedThisSession(true);
 
       // 🔄 Refresh timesheet from server to show updated hours and status
@@ -1778,7 +1936,7 @@ const WeeklyTimesheet: React.FC = () => {
       await loadTimesheet();
 
       toast.success(
-        `Timesheet submitted successfully for Employee ID: ${user.employeeId}`,
+        `Non-approved entries submitted successfully for Employee ID: ${user.employeeId}`,
       );
     } catch (error: any) {
       console.error("Error submitting timesheet:", error);
@@ -1886,6 +2044,8 @@ const WeeklyTimesheet: React.FC = () => {
       const timesheetsByEmployee: Record<string, ApprovalTimesheet | null> = {};
 
       // Load timesheets for all selected employees
+      // Note: We don't filter by allocation dates here because managers need to see
+      // historical timesheets even if allocations have ended
       for (const employeeId of approvalFilters.employeeIds) {
         console.log(
           `[Frontend] Fetching timesheet for employee ${employeeId}, project: ${approvalFilters.projectId}`,
@@ -2492,6 +2652,40 @@ const WeeklyTimesheet: React.FC = () => {
     });
   };
 
+  const handleSendReminder = async (
+    employeeId: string,
+    employeeName: string,
+  ) => {
+    if (!user?.employeeId) {
+      toast.error("Unable to send reminder - manager information not found");
+      return;
+    }
+
+    try {
+      const weekStart = format(startDate, "MMM dd");
+      const weekEnd = format(endDate, "MMM dd, yyyy");
+      const projectName =
+        approvalFilters.projectId === "all"
+          ? "all projects"
+          : managerProjects.find(
+              (p) => p.projectId === approvalFilters.projectId,
+            )?.projectName || approvalFilters.projectId;
+
+      await notificationService.create({
+        userId: employeeId,
+        role: "EMPLOYEE",
+        type: "reminder",
+        title: "Timesheet Reminder",
+        description: `Please submit your timesheet for week ${weekStart} - ${weekEnd} for ${projectName}. Reminder from ${user.name || user.employeeId}.`,
+      });
+
+      toast.success(`Reminder sent to ${employeeName}`);
+    } catch (error) {
+      console.error("Failed to send reminder:", error);
+      toast.error("Failed to send reminder");
+    }
+  };
+
   const openRevertDialog = (
     row: { udaId: string; udaName: string },
     dayIndex: number,
@@ -2599,6 +2793,18 @@ const WeeklyTimesheet: React.FC = () => {
 
   return (
     <div className="page-container">
+      {/* Loading Spinner Overlay */}
+      {isLoading && (
+        <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 flex flex-col items-center gap-4">
+            <Loader2 className="h-12 w-12 text-primary animate-spin" />
+            <p className="text-sm font-semibold text-slate-700">
+              Loading timesheet data...
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Page Header with Week Navigation */}
       <div className="page-header">
         <div className="page-header-content">
@@ -2765,51 +2971,126 @@ const WeeklyTimesheet: React.FC = () => {
                     <>
                       <Button
                         onClick={async () => {
-                          if (!user?.employeeId) {
-                            toast.error("Employee ID not found");
+                          if (!user?.employeeId || !user?.name) {
+                            toast.error("User information not available");
                             return;
                           }
                           setIsSaving(true);
                           try {
                             const weekStart = format(startDate, "yyyy-MM-dd");
-                            const entries = rows.flatMap((row) =>
-                              row.hours.map((hours, dayIndex) => {
-                                const dayDate = format(
-                                  weekDays[dayIndex],
-                                  "yyyy-MM-dd",
+                            const weekEnd = format(endDate, "yyyy-MM-dd");
+
+                            // Filter rows to only include non-approved entries
+                            const preparedRows = rows
+                              .map(({ id, ...row }) => {
+                                // For each day, check if it's approved
+                                const filteredHours = row.hours.map(
+                                  (h, dayIdx) => {
+                                    const isApproved =
+                                      row.entryMeta?.[dayIdx]
+                                        ?.approvalStatus === "approved";
+                                    // If approved, set to "00:00" to skip saving
+                                    return isApproved ? "00:00" : h;
+                                  },
                                 );
-                                const minutes = parseTimeToMinutes(hours);
+
+                                const filteredComments = row.comments.map(
+                                  (c, dayIdx) => {
+                                    const isApproved =
+                                      row.entryMeta?.[dayIdx]
+                                        ?.approvalStatus === "approved";
+                                    // If approved, clear comment to skip saving
+                                    return isApproved ? "" : c;
+                                  },
+                                );
+
+                                // Check if this row has any non-approved hours
+                                const hasNonApprovedHours = filteredHours.some(
+                                  (h) => h && h !== "00:00" && h !== "0:00",
+                                );
+
+                                if (!hasNonApprovedHours) {
+                                  return null; // Skip this row entirely if all days are approved
+                                }
+
                                 return {
-                                  employeeId: user.employeeId,
-                                  projectId: row.projectId,
+                                  projectId: row.projectId || "N/A",
+                                  projectCode: row.projectCode,
+                                  projectName: row.projectName,
                                   udaId: row.udaId,
-                                  date: dayDate,
-                                  hours: minutes / 60,
-                                  comment: row.comments[dayIndex] || "",
+                                  udaName: row.udaName,
+                                  type: row.type || "General",
+                                  financialLineItem: row.financialLineItem,
+                                  billable: row.billable,
+                                  hours: filteredHours,
+                                  comments: filteredComments,
                                 };
-                              }),
-                            );
-                            await timesheetService.saveEntries({
+                              })
+                              .filter(
+                                (
+                                  row,
+                                ): row is {
+                                  projectId: string;
+                                  projectCode: string;
+                                  projectName: string;
+                                  udaId: string;
+                                  udaName: string;
+                                  type: string;
+                                  financialLineItem: string;
+                                  billable: string;
+                                  hours: (string | null)[];
+                                  comments: (string | null)[];
+                                } => row !== null,
+                              ); // Remove null entries with type guard
+
+                            if (preparedRows.length === 0) {
+                              toast.info("No non-approved entries to save");
+                              setIsSaving(false);
+                              return;
+                            }
+
+                            const payload = {
                               employeeId: user.employeeId,
+                              employeeName: user.name,
                               weekStartDate: weekStart,
-                              entries: entries.filter((e) => e.hours > 0),
-                            });
-                            toast.success("Timesheet saved successfully");
-                            setForceReloadCounter((prev) => prev + 1);
+                              weekEndDate: weekEnd,
+                              rows: preparedRows,
+                              status: "draft" as const,
+                              totalHours: 0, // Will be calculated on backend
+                            };
+
+                            await timesheetService.saveDraft(payload);
+
+                            // Only set status to draft if there are non-approved entries
+                            // Keep checking for approved entries presence
+                            const hasApprovedEntries = rows.some((row) =>
+                              row.entryMeta?.some(
+                                (meta) => meta?.approvalStatus === "approved",
+                              ),
+                            );
+
+                            if (!hasApprovedEntries) {
+                              setTimesheetStatus("draft");
+                            }
+
+                            toast.success(
+                              "Non-approved entries saved as draft",
+                            );
+
+                            // Reload timesheet from server
+                            await loadTimesheet();
                           } catch (error: any) {
                             console.error("Failed to save timesheet:", error);
                             toast.error(
-                              error?.message || "Failed to save timesheet",
+                              error?.response?.data?.message ||
+                                error?.message ||
+                                "Failed to save timesheet",
                             );
                           } finally {
                             setIsSaving(false);
                           }
                         }}
-                        disabled={
-                          isSaving ||
-                          timesheetStatus === "approved" ||
-                          isLoading
-                        }
+                        disabled={isSaving || isLoading}
                         variant="outline"
                         className="border-teal-600 text-teal-600 hover:bg-teal-50 gap-2 h-10"
                       >
@@ -2818,11 +3099,7 @@ const WeeklyTimesheet: React.FC = () => {
                       </Button>
                       <Button
                         onClick={() => setSubmitConfirmDialogOpen(true)}
-                        disabled={
-                          isSaving ||
-                          timesheetStatus === "approved" ||
-                          isLoading
-                        }
+                        disabled={isSaving || isLoading}
                         className="bg-teal-600 hover:bg-teal-700 text-white gap-2 h-10"
                       >
                         <Send className="h-4 w-4" />
@@ -3334,7 +3611,7 @@ const WeeklyTimesheet: React.FC = () => {
             <div className="overflow-hidden bg-[#F1F5F9] rounded-lg border shadow-sm relative">
               <div className="flex flex-col">
                 {/* Header Row - Premium Dark Style */}
-                <div className="flex h-[50px] bg-[#334155] text-white/90 sticky top-0 z-30 shadow-lg">
+                <div className="flex h-[50px] bg-[#334155] text-white/90 shadow-lg">
                   <div className="flex-[0_0_300px] min-w-[300px] flex items-center">
                     <div className="px-8 h-[50px] flex items-center text-[11px] font-black uppercase tracking-[0.2em] opacity-60 gap-3">
                       {/* Select All Employees Checkbox - Only in multi-employee approval mode */}
@@ -3610,6 +3887,24 @@ const WeeklyTimesheet: React.FC = () => {
                                       ? dayDate < allocationStart
                                       : false;
 
+                                  // Check if day is after allocation end date
+                                  const allocationEnd = allocationDates?.end
+                                    ? new Date(allocationDates.end)
+                                    : null;
+                                  if (allocationEnd) {
+                                    allocationEnd.setHours(23, 59, 59, 999);
+                                  }
+                                  const isAfterAllocationEnd = allocationEnd
+                                    ? dayDate > allocationEnd
+                                    : false;
+
+                                  if (hIdx === 0) {
+                                    // Log once per project row (first day)
+                                    console.log(
+                                      `[Cell Rendering] Project: ${projectGroup.projectId}, Allocation End: ${allocationEnd?.toISOString() || "None"}`,
+                                    );
+                                  }
+
                                   // Check if day is after project end date
                                   const project = projectCatalogList.find(
                                     (p) =>
@@ -3627,10 +3922,11 @@ const WeeklyTimesheet: React.FC = () => {
                                     }
                                   }
 
-                                  // Only disable if approved or after project end or future day
+                                  // Only disable if after project end or future day or after allocation end
+                                  // Don't disable based on approval status - let users add new categories
                                   const isDisabled =
-                                    timesheetStatus === "approved" ||
                                     isAfterProjectEnd ||
+                                    isAfterAllocationEnd ||
                                     isFutureDay;
 
                                   // Check for any revision requests or approvals in categories
@@ -3650,7 +3946,9 @@ const WeeklyTimesheet: React.FC = () => {
 
                                   // Show 00:00 for all conditions
                                   let placeholderText = "00:00";
-                                  if (isAfterProjectEnd) {
+                                  if (isAfterAllocationEnd) {
+                                    placeholderText = "Allocation Ended";
+                                  } else if (isAfterProjectEnd) {
                                     placeholderText = "Project Ended";
                                   }
 
@@ -3681,7 +3979,8 @@ const WeeklyTimesheet: React.FC = () => {
                                               "cursor-not-allowed bg-slate-200 border-slate-300 text-slate-500",
                                             isHolidayDay &&
                                               "bg-purple-100 border-purple-300 text-purple-600",
-                                            isAfterProjectEnd &&
+                                            (isAfterProjectEnd ||
+                                              isAfterAllocationEnd) &&
                                               "bg-red-100 border-red-300 text-red-600",
                                             hasRevisionRequested &&
                                               "bg-amber-100 border-2 border-amber-500 ring-2 ring-amber-200 text-amber-900 font-extrabold cursor-pointer",
@@ -3957,27 +4256,97 @@ const WeeklyTimesheet: React.FC = () => {
                               key={employeeId}
                               className="border-b-2 border-slate-200"
                             >
-                              <div className="px-6 py-4 bg-slate-50">
-                                <div className="flex items-center gap-3">
-                                  <div className="h-10 w-10 bg-slate-200 rounded-full flex items-center justify-center">
-                                    <span className="text-sm font-black text-slate-400">
-                                      {(
-                                        empData?.resourceName ||
-                                        empData?.name ||
-                                        ""
-                                      ).charAt(0)}
-                                    </span>
+                              <div className="flex items-stretch">
+                                {/* LEFT PANE - Employee Info */}
+                                <div className="flex-[0_0_300px] min-w-[300px] bg-slate-50 border-r border-slate-200">
+                                  <div className="px-6 py-4 flex items-center gap-3">
+                                    {/* Checkbox */}
+                                    <Checkbox
+                                      checked={selectedEmployees.has(
+                                        employeeId,
+                                      )}
+                                      onCheckedChange={(checked) => {
+                                        const newSelected = new Set(
+                                          selectedEmployees,
+                                        );
+                                        if (checked) {
+                                          newSelected.add(employeeId);
+                                        } else {
+                                          newSelected.delete(employeeId);
+                                        }
+                                        setSelectedEmployees(newSelected);
+                                      }}
+                                      className="h-5 w-5 border-2"
+                                    />
+
+                                    {/* Avatar */}
+                                    <div className="h-10 w-10 bg-slate-200 rounded-full flex items-center justify-center">
+                                      <span className="text-sm font-black text-slate-400">
+                                        {(
+                                          empData?.resourceName ||
+                                          empData?.name ||
+                                          ""
+                                        ).charAt(0)}
+                                      </span>
+                                    </div>
+
+                                    {/* Employee Info */}
+                                    <div className="flex-1">
+                                      <h3 className="font-black text-sm text-slate-800">
+                                        {empData?.resourceName ||
+                                          empData?.name ||
+                                          employeeId}
+                                        {empData?.projectId &&
+                                          empData.projectId !== "N/A" && (
+                                            <span className="ml-2 text-xs font-semibold text-teal-600">
+                                              ({empData.projectId})
+                                            </span>
+                                          )}
+                                      </h3>
+                                      <p className="text-xs text-slate-500">
+                                        {empData?.designation ||
+                                          empData?.jobRole ||
+                                          "Employee"}
+                                      </p>
+                                    </div>
                                   </div>
-                                  <div className="flex-1">
-                                    <h3 className="font-black text-sm text-slate-800">
-                                      {empData?.resourceName ||
-                                        empData?.name ||
-                                        employeeId}
-                                    </h3>
-                                    <p className="text-xs text-slate-500">
+                                </div>
+
+                                {/* GRID PANE - Centered "No timesheet submitted" text */}
+                                <div className="flex-1 flex">
+                                  <div className="flex-1 flex items-center justify-center border-r border-slate-200 bg-slate-50/50">
+                                    <p className="text-sm font-semibold text-slate-400 italic">
                                       No timesheet submitted
                                     </p>
                                   </div>
+                                </div>
+
+                                {/* RIGHT PANE - Reminder Icon */}
+                                <div className="w-[60px] bg-slate-50 border-l border-slate-200 flex items-center justify-center">
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <button
+                                          onClick={() =>
+                                            handleSendReminder(
+                                              employeeId,
+                                              empData?.resourceName ||
+                                                empData?.name ||
+                                                employeeId,
+                                            )
+                                          }
+                                          className="p-2 hover:bg-blue-100 rounded-full transition-all group"
+                                        >
+                                          <Bell className="h-5 w-5 text-slate-400 group-hover:text-blue-600 group-hover:animate-pulse" />
+                                        </button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <p className="text-xs font-bold">
+                                          Send Reminder
+                                        </p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
                                 </div>
                               </div>
                             </div>
@@ -4363,17 +4732,47 @@ const WeeklyTimesheet: React.FC = () => {
                                               dateGroups[dateKey].push(entry);
                                             });
 
+                                            const projectKey = `${employeeId}-${projectId}`;
+                                            const isProjectExpanded =
+                                              expandedProjects.has(projectKey);
+
                                             return (
                                               <div
                                                 key={projectId}
                                                 className="mb-4"
                                               >
-                                                {/* Project Header */}
-                                                <div className="bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-3 flex items-center gap-3">
-                                                  <div className="h-2 w-2 bg-white rounded-full animate-pulse"></div>
-                                                  <h4 className="font-black text-white text-sm uppercase tracking-wider">
-                                                    {projectName}
-                                                  </h4>
+                                                {/* Project Header - Collapsible */}
+                                                <div
+                                                  className="bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-3 flex items-center gap-3 cursor-pointer hover:from-indigo-700 hover:to-purple-700 transition-colors"
+                                                  onClick={() => {
+                                                    const newExpanded = new Set(
+                                                      expandedProjects,
+                                                    );
+                                                    if (isProjectExpanded) {
+                                                      newExpanded.delete(
+                                                        projectKey,
+                                                      );
+                                                    } else {
+                                                      newExpanded.add(
+                                                        projectKey,
+                                                      );
+                                                    }
+                                                    setExpandedProjects(
+                                                      newExpanded,
+                                                    );
+                                                  }}
+                                                >
+                                                  <ChevronDown
+                                                    className={cn(
+                                                      "h-4 w-4 text-white transition-transform",
+                                                      isProjectExpanded
+                                                        ? "rotate-0"
+                                                        : "-rotate-90",
+                                                    )}
+                                                  />
+                                                  <span className="text-blue-200 font-black text-sm">
+                                                    {projectId}
+                                                  </span>
                                                   <Badge className="bg-white/20 text-white border-white/30 px-2 py-0.5 text-[10px] font-black">
                                                     {projectEntries.length}{" "}
                                                     entries
@@ -4381,215 +4780,314 @@ const WeeklyTimesheet: React.FC = () => {
                                                 </div>
 
                                                 {/* Date Groups with Striped Backgrounds */}
-                                                <div>
-                                                  {Object.keys(dateGroups).map(
-                                                    (dateKey, dateIdx) => {
-                                                      const dateEntries =
-                                                        dateGroups[dateKey];
-                                                      const isStriped =
-                                                        dateIdx % 2 === 1;
+                                                {isProjectExpanded && (
+                                                  <div>
+                                                    {Object.keys(
+                                                      dateGroups,
+                                                    ).map(
+                                                      (dateKey, dateIdx) => {
+                                                        const dateEntries =
+                                                          dateGroups[dateKey];
+                                                        const isStriped =
+                                                          dateIdx % 2 === 1;
 
-                                                      return (
-                                                        <div
-                                                          key={dateKey}
-                                                          className={cn(
-                                                            "divide-y divide-slate-200",
-                                                            isStriped
-                                                              ? "bg-slate-100/50"
-                                                              : "bg-white",
-                                                          )}
-                                                        >
-                                                          {dateEntries.map(
-                                                            (
-                                                              entry,
-                                                              entryIdx,
-                                                            ) => {
-                                                              const entryKey = `${employeeId}-${entry.entryIdx}`;
-                                                              const isChecked =
-                                                                selectedEntries.has(
-                                                                  entryKey,
-                                                                ) ||
-                                                                (selectedEmployees.has(
-                                                                  employeeId,
-                                                                ) &&
-                                                                  !uncheckedEntries.has(
+                                                        return (
+                                                          <div
+                                                            key={dateKey}
+                                                            className={cn(
+                                                              "divide-y divide-slate-200",
+                                                              isStriped
+                                                                ? "bg-slate-100/50"
+                                                                : "bg-white",
+                                                            )}
+                                                          >
+                                                            {dateEntries.map(
+                                                              (
+                                                                entry,
+                                                                entryIdx,
+                                                              ) => {
+                                                                const entryKey = `${employeeId}-${entry.entryIdx}`;
+                                                                const isChecked =
+                                                                  selectedEntries.has(
                                                                     entryKey,
-                                                                  ));
-                                                              const statusClass =
-                                                                entry.approvalStatus ===
-                                                                "approved"
-                                                                  ? "bg-emerald-50 text-emerald-700 border-emerald-300"
-                                                                  : entry.approvalStatus ===
-                                                                      "revision_requested"
-                                                                    ? "bg-amber-50 text-amber-700 border-amber-300"
-                                                                    : "bg-blue-50 text-blue-700 border-blue-300";
+                                                                  ) ||
+                                                                  (selectedEmployees.has(
+                                                                    employeeId,
+                                                                  ) &&
+                                                                    !uncheckedEntries.has(
+                                                                      entryKey,
+                                                                    ));
+                                                                const statusClass =
+                                                                  entry.approvalStatus ===
+                                                                  "approved"
+                                                                    ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                                                                    : entry.approvalStatus ===
+                                                                        "revision_requested"
+                                                                      ? "bg-amber-50 text-amber-700 border-amber-300"
+                                                                      : "bg-blue-50 text-blue-700 border-blue-300";
 
-                                                              return (
-                                                                <div
-                                                                  key={entryKey}
-                                                                  className="flex items-center gap-4 px-6 py-3 hover:bg-slate-50 transition-colors"
-                                                                >
-                                                                  {/* Checkbox */}
-                                                                  <Checkbox
-                                                                    checked={
-                                                                      isChecked
-                                                                    }
-                                                                    onCheckedChange={(
-                                                                      checked,
-                                                                    ) => {
-                                                                      const newSelected =
-                                                                        new Set(
-                                                                          selectedEntries,
-                                                                        );
-                                                                      const newUnchecked =
-                                                                        new Set(
-                                                                          uncheckedEntries,
-                                                                        );
-
-                                                                      if (
-                                                                        checked
-                                                                      ) {
-                                                                        newSelected.add(
-                                                                          entryKey,
-                                                                        );
-                                                                        newUnchecked.delete(
-                                                                          entryKey,
-                                                                        );
-                                                                      } else {
-                                                                        newSelected.delete(
-                                                                          entryKey,
-                                                                        );
-                                                                        if (
-                                                                          selectedEmployees.has(
-                                                                            employeeId,
-                                                                          )
-                                                                        ) {
-                                                                          newUnchecked.add(
-                                                                            entryKey,
-                                                                          );
-                                                                        }
-                                                                      }
-                                                                      setSelectedEntries(
-                                                                        newSelected,
-                                                                      );
-                                                                      setUncheckedEntries(
-                                                                        newUnchecked,
-                                                                      );
-                                                                    }}
-                                                                    className="h-5 w-5"
-                                                                  />
-
-                                                                  {/* Day & Date */}
-                                                                  <div className="w-24 flex flex-col">
-                                                                    <span className="text-xs font-black text-slate-700">
-                                                                      {
-                                                                        entry.dayName
-                                                                      }
-                                                                    </span>
-                                                                    <span className="text-[10px] font-bold text-slate-500">
-                                                                      {
-                                                                        entry.date
-                                                                      }
-                                                                    </span>
-                                                                  </div>
-
-                                                                  {/* UDA Name, Project & Type - Swapped Position */}
-                                                                  <div className="flex-1 min-w-[200px]">
-                                                                    <div className="flex flex-col gap-1">
-                                                                      <span className="text-sm font-black text-slate-900">
-                                                                        {
-                                                                          entry.udaName
-                                                                        }
-                                                                      </span>
-                                                                      <div className="flex items-center gap-2">
-                                                                        <Badge className="bg-indigo-100 text-indigo-700 border-none px-2 py-0.5 text-[9px] font-black h-4">
-                                                                          {
-                                                                            entry.type
-                                                                          }
-                                                                        </Badge>
-                                                                      </div>
-                                                                    </div>
-                                                                  </div>
-
-                                                                  {/* Hours - Swapped Position */}
+                                                                return (
                                                                   <div
+                                                                    key={
+                                                                      entryKey
+                                                                    }
                                                                     className={cn(
-                                                                      "w-24 px-3 py-1.5 rounded-lg border-2 text-center font-black text-sm",
-                                                                      statusClass,
+                                                                      "flex items-center gap-4 px-6 py-3 transition-colors",
+                                                                      entry.approvalStatus ===
+                                                                        "approved"
+                                                                        ? "bg-emerald-50/70 hover:bg-emerald-50"
+                                                                        : "hover:bg-slate-50",
                                                                     )}
                                                                   >
-                                                                    {
-                                                                      entry.hours
-                                                                    }
-                                                                  </div>
+                                                                    {/* Checkbox */}
+                                                                    <Checkbox
+                                                                      checked={
+                                                                        isChecked
+                                                                      }
+                                                                      onCheckedChange={(
+                                                                        checked,
+                                                                      ) => {
+                                                                        const newSelected =
+                                                                          new Set(
+                                                                            selectedEntries,
+                                                                          );
+                                                                        const newUnchecked =
+                                                                          new Set(
+                                                                            uncheckedEntries,
+                                                                          );
 
-                                                                  {/* Comments as Textarea with Approve/Reject Buttons */}
-                                                                  <div className="flex-1 min-w-[250px]">
-                                                                    <Textarea
-                                                                      placeholder="Add approval comments..."
-                                                                      defaultValue={
-                                                                        entry.comment ||
-                                                                        ""
-                                                                      }
-                                                                      className="min-h-[60px] text-xs resize-none bg-white border-slate-200 focus:border-primary"
-                                                                      disabled={
-                                                                        entry.approvalStatus ===
-                                                                        "approved"
-                                                                      }
+                                                                        if (
+                                                                          checked
+                                                                        ) {
+                                                                          newSelected.add(
+                                                                            entryKey,
+                                                                          );
+                                                                          newUnchecked.delete(
+                                                                            entryKey,
+                                                                          );
+                                                                        } else {
+                                                                          newSelected.delete(
+                                                                            entryKey,
+                                                                          );
+                                                                          if (
+                                                                            selectedEmployees.has(
+                                                                              employeeId,
+                                                                            )
+                                                                          ) {
+                                                                            newUnchecked.add(
+                                                                              entryKey,
+                                                                            );
+                                                                          }
+                                                                        }
+                                                                        setSelectedEntries(
+                                                                          newSelected,
+                                                                        );
+                                                                        setUncheckedEntries(
+                                                                          newUnchecked,
+                                                                        );
+                                                                      }}
+                                                                      className="h-5 w-5"
                                                                     />
-                                                                    <div className="flex items-center gap-2 mt-2">
+
+                                                                    {/* Day & Date + UDA Name & Hours Combined */}
+                                                                    <div className="flex items-center gap-3 min-w-[400px]">
+                                                                      {/* Day & Date */}
+                                                                      <div className="w-20 flex flex-col shrink-0">
+                                                                        <span className="text-xs font-black text-slate-700">
+                                                                          {
+                                                                            entry.dayName
+                                                                          }
+                                                                        </span>
+                                                                        <span className="text-[10px] font-bold text-slate-500">
+                                                                          {
+                                                                            entry.date
+                                                                          }
+                                                                        </span>
+                                                                      </div>
+
+                                                                      {/* UDA Name & Type */}
+                                                                      <div className="flex-1 min-w-[180px]">
+                                                                        <div className="flex flex-col gap-1">
+                                                                          <span className="text-sm font-black text-slate-900">
+                                                                            {
+                                                                              entry.udaName
+                                                                            }
+                                                                            <span
+                                                                              className={cn(
+                                                                                "w-20 px-3 py-1.5 ml-2 rounded-lg border-2 text-center font-black text-sm shrink-0",
+                                                                                statusClass,
+                                                                              )}
+                                                                            >
+                                                                              {
+                                                                                entry.hours
+                                                                              }
+                                                                            </span>
+                                                                          </span>
+                                                                          {/* Hours */}
+
+                                                                          <div className="flex items-center gap-2">
+                                                                            <Badge className="bg-indigo-100 text-indigo-700 border-none px-2 py-0.5 text-[9px] font-black h-4">
+                                                                              {
+                                                                                entry.type
+                                                                              }
+                                                                            </Badge>
+                                                                          </div>
+                                                                        </div>
+                                                                      </div>
+                                                                    </div>
+
+                                                                    {/* Comments as Textarea */}
+                                                                    <div className="flex-1 min-w-[300px] max-w-[500px]">
+                                                                      <Textarea
+                                                                        placeholder="Add approval comments..."
+                                                                        defaultValue={
+                                                                          entry.comment ||
+                                                                          ""
+                                                                        }
+                                                                        className="min-h-[60px] text-xs resize-none bg-white border-slate-200 focus:border-primary"
+                                                                        disabled={
+                                                                          entry.approvalStatus ===
+                                                                          "approved"
+                                                                        }
+                                                                      />
+                                                                    </div>
+
+                                                                    {/* Approve/Reject Buttons in Last Column - Icons Only */}
+                                                                    <div className="flex items-center gap-2 shrink-0">
                                                                       {entry.approvalStatus !==
                                                                         "approved" && (
                                                                         <>
                                                                           <Button
                                                                             size="sm"
-                                                                            className="h-7 px-3 bg-emerald-500 hover:bg-emerald-600 text-white gap-1.5"
-                                                                            onClick={() => {
-                                                                              // Individual approval logic here
-                                                                              console.log(
-                                                                                "Approve entry:",
-                                                                                entryKey,
-                                                                              );
+                                                                            className="h-9 w-9 p-0 bg-emerald-500 hover:bg-emerald-600 text-white rounded-full"
+                                                                            onClick={async () => {
+                                                                              try {
+                                                                                const managerId =
+                                                                                  user?.employeeId ||
+                                                                                  user?.id;
+                                                                                if (
+                                                                                  !managerId
+                                                                                ) {
+                                                                                  toast.error(
+                                                                                    "Manager ID not found",
+                                                                                  );
+                                                                                  return;
+                                                                                }
+                                                                                await timesheetService.bulkApproveSelectedDays(
+                                                                                  {
+                                                                                    managerId,
+                                                                                    projectId:
+                                                                                      entry.projectId,
+                                                                                    employeeId:
+                                                                                      entry.employeeId,
+                                                                                    weekStartDate:
+                                                                                      entry.weekStartDate,
+                                                                                    dayIndices:
+                                                                                      [
+                                                                                        entry.dayIndex,
+                                                                                      ],
+                                                                                  },
+                                                                                );
+                                                                                toast.success(
+                                                                                  "Entry approved",
+                                                                                );
+                                                                                // Optionally reload approvals
+                                                                                setForceReloadCounter(
+                                                                                  (
+                                                                                    c,
+                                                                                  ) =>
+                                                                                    c +
+                                                                                    1,
+                                                                                );
+                                                                              } catch (error) {
+                                                                                toast.error(
+                                                                                  "Failed to approve entry",
+                                                                                );
+                                                                              }
                                                                             }}
+                                                                            title="Approve"
                                                                           >
-                                                                            <Check className="h-3.5 w-3.5" />
-                                                                            Approve
+                                                                            <Check className="h-4 w-4" />
                                                                           </Button>
                                                                           <Button
                                                                             size="sm"
                                                                             variant="outline"
-                                                                            className="h-7 px-3 border-red-300 text-red-600 hover:bg-red-50 gap-1.5"
-                                                                            onClick={() => {
-                                                                              // Individual rejection logic here
-                                                                              console.log(
-                                                                                "Reject entry:",
-                                                                                entryKey,
-                                                                              );
+                                                                            className="h-9 w-9 p-0 border-2 border-red-500 text-red-600 hover:bg-red-50 rounded-full"
+                                                                            onClick={async () => {
+                                                                              try {
+                                                                                const managerId =
+                                                                                  user?.employeeId ||
+                                                                                  user?.id;
+                                                                                if (
+                                                                                  !managerId
+                                                                                ) {
+                                                                                  toast.error(
+                                                                                    "Manager ID not found",
+                                                                                  );
+                                                                                  return;
+                                                                                }
+                                                                                await timesheetService.requestRevision(
+                                                                                  {
+                                                                                    managerId,
+                                                                                    projectId:
+                                                                                      entry.projectId,
+                                                                                    employeeId:
+                                                                                      entry.employeeId,
+                                                                                    weekStartDate:
+                                                                                      entry.weekStartDate,
+                                                                                    reverts:
+                                                                                      [
+                                                                                        {
+                                                                                          dayIndex:
+                                                                                            entry.dayIndex,
+                                                                                          udaId:
+                                                                                            entry.udaId,
+                                                                                          reason:
+                                                                                            rejectComment ||
+                                                                                            "Rejected by manager",
+                                                                                        },
+                                                                                      ],
+                                                                                  },
+                                                                                );
+                                                                                toast.success(
+                                                                                  "Entry rejected",
+                                                                                );
+                                                                                setForceReloadCounter(
+                                                                                  (
+                                                                                    c,
+                                                                                  ) =>
+                                                                                    c +
+                                                                                    1,
+                                                                                );
+                                                                              } catch (error) {
+                                                                                toast.error(
+                                                                                  "Failed to reject entry",
+                                                                                );
+                                                                              }
                                                                             }}
+                                                                            title="Reject"
                                                                           >
-                                                                            <X className="h-3.5 w-3.5" />
-                                                                            Reject
+                                                                            <X className="h-4 w-4" />
                                                                           </Button>
                                                                         </>
                                                                       )}
                                                                       {entry.approvalStatus ===
                                                                         "approved" && (
-                                                                        <Badge className="bg-emerald-100 text-emerald-700 border-emerald-300 px-3 py-1">
-                                                                          <Check className="h-3 w-3 mr-1" />
-                                                                          Approved
-                                                                        </Badge>
+                                                                        <div className="flex items-center justify-center h-9 w-9 bg-emerald-500 rounded-full">
+                                                                          <Check className="h-4 w-4 text-white" />
+                                                                        </div>
                                                                       )}
                                                                     </div>
                                                                   </div>
-                                                                </div>
-                                                              );
-                                                            },
-                                                          )}
-                                                        </div>
-                                                      );
-                                                    },
-                                                  )}
-                                                </div>
+                                                                );
+                                                              },
+                                                            )}
+                                                          </div>
+                                                        );
+                                                      },
+                                                    )}
+                                                  </div>
+                                                )}
                                               </div>
                                             );
                                           },
@@ -4643,6 +5141,50 @@ const WeeklyTimesheet: React.FC = () => {
                     <Trash2 className="h-4 w-4" />
                     Yes, Delete
                   </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+
+            {/* Validation Dialog - 8 Hour Check */}
+            <AlertDialog
+              open={validationDialogOpen}
+              onOpenChange={setValidationDialogOpen}
+            >
+              <AlertDialogContent className="rounded-2xl max-w-2xl">
+                <AlertDialogHeader>
+                  <AlertDialogTitle className="flex items-center gap-2 text-amber-600">
+                    <AlertTriangle className="h-5 w-5" />
+                    Insufficient Hours
+                  </AlertDialogTitle>
+                  <AlertDialogDescription className="text-base">
+                    Each working day must have at least 8 hours. Days with less
+                    than 8 hours:
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <div className="my-4 space-y-2">
+                  {invalidDaysList.map((day, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg"
+                    >
+                      <Clock className="h-4 w-4 text-amber-600 flex-shrink-0" />
+                      <span className="text-sm font-semibold text-amber-900">
+                        {day}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <AlertDialogFooter>
+                  <AlertDialogCancel
+                    onClick={() => {
+                      setValidationDialogOpen(false);
+                      setInvalidDaysList([]);
+                    }}
+                    className="rounded-xl font-bold gap-2"
+                  >
+                    <X className="h-4 w-4" />
+                    OK, I'll Add More Hours
+                  </AlertDialogCancel>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
@@ -4956,10 +5498,12 @@ const WeeklyTimesheet: React.FC = () => {
                                       e.target.value,
                                     )
                                   }
-                                  disabled={timesheetStatus === "approved"}
+                                  disabled={isApproved}
                                   className={cn(
                                     "text-center font-black text-base w-full min-w-[90px] max-w-[100px]",
                                     cellError && "border-red-500 bg-red-50",
+                                    isApproved &&
+                                      "bg-slate-100 cursor-not-allowed",
                                   )}
                                 />
                               </div>
@@ -4975,99 +5519,112 @@ const WeeklyTimesheet: React.FC = () => {
                                     )
                                   }
                                   placeholder="Add notes about this work..."
-                                  className="min-h-[60px] text-sm resize-y w-full break-words"
-                                  disabled={timesheetStatus === "approved"}
+                                  className={cn(
+                                    "min-h-[60px] text-sm resize-y w-full break-words",
+                                    isApproved &&
+                                      "bg-slate-100 cursor-not-allowed",
+                                  )}
+                                  disabled={isApproved}
                                 />
                               </div>
 
                               {/* Action Buttons Column */}
                               <div className="col-span-1 flex items-center justify-center">
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => {
-                                    if (!categoryDialogData) return;
+                                {!isApproved ? (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                      if (!categoryDialogData) return;
 
-                                    // Clear hours and comments for this day only
-                                    setRows(
-                                      (prev) =>
-                                        prev
-                                          .map((r) => {
-                                            if (r.id === category.rowId) {
-                                              const newHours = [...r.hours];
-                                              const newComments = [
-                                                ...r.comments,
-                                              ];
-                                              const newEntryMeta = r.entryMeta
-                                                ? [...r.entryMeta]
-                                                : new Array(7).fill(null);
+                                      // Clear hours and comments for this day only
+                                      setRows(
+                                        (prev) =>
+                                          prev
+                                            .map((r) => {
+                                              if (r.id === category.rowId) {
+                                                const newHours = [...r.hours];
+                                                const newComments = [
+                                                  ...r.comments,
+                                                ];
+                                                const newEntryMeta = r.entryMeta
+                                                  ? [...r.entryMeta]
+                                                  : new Array(7).fill(null);
 
-                                              // Clear the current day
-                                              newHours[
-                                                categoryDialogData.dayIndex
-                                              ] = "00:00";
-                                              newComments[
-                                                categoryDialogData.dayIndex
-                                              ] = "";
-                                              newEntryMeta[
-                                                categoryDialogData.dayIndex
-                                              ] = null;
+                                                // Clear the current day
+                                                newHours[
+                                                  categoryDialogData.dayIndex
+                                                ] = "00:00";
+                                                newComments[
+                                                  categoryDialogData.dayIndex
+                                                ] = "";
+                                                newEntryMeta[
+                                                  categoryDialogData.dayIndex
+                                                ] = null;
 
-                                              // Check if all days now have zero hours
-                                              const hasAnyHours = newHours.some(
-                                                (h) =>
-                                                  h &&
-                                                  h !== "00:00" &&
-                                                  h !== "0",
-                                              );
+                                                // Check if all days now have zero hours
+                                                const hasAnyHours =
+                                                  newHours.some(
+                                                    (h) =>
+                                                      h &&
+                                                      h !== "00:00" &&
+                                                      h !== "0",
+                                                  );
 
-                                              // Return null if no hours anywhere (will be filtered out)
-                                              if (!hasAnyHours) {
-                                                return null;
+                                                // Return null if no hours anywhere (will be filtered out)
+                                                if (!hasAnyHours) {
+                                                  return null;
+                                                }
+
+                                                // Otherwise return updated row
+                                                return {
+                                                  ...r,
+                                                  hours: newHours,
+                                                  comments: newComments,
+                                                  entryMeta: newEntryMeta,
+                                                };
                                               }
+                                              return r;
+                                            })
+                                            .filter(Boolean) as TimesheetRow[],
+                                      );
 
-                                              // Otherwise return updated row
-                                              return {
-                                                ...r,
-                                                hours: newHours,
-                                                comments: newComments,
-                                                entryMeta: newEntryMeta,
-                                              };
-                                            }
-                                            return r;
-                                          })
-                                          .filter(Boolean) as TimesheetRow[],
-                                    );
+                                      // Update dialog data - remove this category from dialog
+                                      setCategoryDialogData((prev) => {
+                                        if (!prev) return prev;
+                                        return {
+                                          ...prev,
+                                          categories: prev.categories.filter(
+                                            (c) => c.rowId !== category.rowId,
+                                          ),
+                                        };
+                                      });
 
-                                    // Update dialog data - remove this category from dialog
-                                    setCategoryDialogData((prev) => {
-                                      if (!prev) return prev;
-                                      return {
-                                        ...prev,
-                                        categories: prev.categories.filter(
-                                          (c) => c.rowId !== category.rowId,
-                                        ),
-                                      };
-                                    });
-
-                                    toast.success(
-                                      `Cleared ${category.udaName} for ${format(categoryDialogData.dayDate, "EEEE")}`,
-                                    );
-                                  }}
-                                  disabled={timesheetStatus === "approved"}
-                                  className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 disabled:opacity-30 disabled:cursor-not-allowed"
-                                  title="Clear this category for this day"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
+                                      toast.success(
+                                        `Cleared ${category.udaName} for ${format(categoryDialogData.dayDate, "EEEE")}`,
+                                      );
+                                    }}
+                                    className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 category-delete-btn"
+                                    title="Clear this category for this day"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                ) : (
+                                  <div
+                                    className="h-8 w-8 flex items-center justify-center"
+                                    title="Approved"
+                                  >
+                                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                                  </div>
+                                )}
                               </div>
                             </div>
                           );
                         })}
 
                         {/* Empty row for adding new category - Always at the bottom */}
-                        <div className="grid grid-cols-12 gap-3 px-4 py-3 bg-slate-50">
+                        <div className="grid grid-cols-12 gap-3 px-4 py-3 bg-slate-50 category-empty-row">
                           {/* Category Type Dropdown */}
                           <div className="col-span-3 flex items-center">
                             <Select

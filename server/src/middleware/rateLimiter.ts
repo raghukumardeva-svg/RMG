@@ -21,19 +21,21 @@ const rateLimitHandler = (req: Request, res: Response) => {
 
 /**
  * General API rate limiter
- * 100 requests per 15 minutes per IP
+ * 100 requests per 15 minutes per IP (500 in development)
  * Note: Uses default IP-based limiting (handles IPv6 correctly)
  */
 export const generalRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100,
+  max: process.env.NODE_ENV === 'production' ? 100 : 500, // Higher limit for development
   message: 'Too many requests from this IP, please try again after 15 minutes',
   standardHeaders: true,
   legacyHeaders: false,
   handler: rateLimitHandler,
   skip: (req) => {
-    // Skip rate limiting for health check endpoints
-    return req.path === '/health' || req.path === '/api/health';
+    // Skip rate limiting for health check endpoints or in development for localhost
+    const isDevelopment = process.env.NODE_ENV !== 'production';
+    const isLocalhost = req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1';
+    return req.path === '/health' || req.path === '/api/health' || (isDevelopment && isLocalhost);
   }
 });
 

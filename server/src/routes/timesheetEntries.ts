@@ -1,6 +1,7 @@
 import express from 'express';
 import TimesheetEntry from '../models/TimesheetEntry';
 import Project from '../models/Project';
+import Notification from '../models/Notification';
 import {
     weekRowsToDateEntries,
     dateEntriesToWeekRows,
@@ -779,6 +780,51 @@ router.get('/pending-approval/:managerId', async (req, res) => {
     } catch (error) {
         console.error('Error fetching pending approvals:', error);
         res.status(500).json({ message: 'Failed to fetch pending approvals' });
+    }
+});
+
+/**
+ * Send reminder to employee for timesheet submission
+ */
+router.post('/send-reminder', async (req, res) => {
+    try {
+        const { employeeId, employeeName, managerId, managerName, projectId, projectName, weekStartDate, weekEndDate } = req.body;
+
+        if (!employeeId || !managerId || !weekStartDate) {
+            return res.status(400).json({
+                success: false,
+                message: 'Missing required fields: employeeId, managerId, weekStartDate'
+            });
+        }
+
+        // Create notification for employee
+        const notification = new Notification({
+            title: 'Timesheet Reminder',
+            description: `Please submit your timesheet for week ${weekStartDate} - ${weekEndDate || ''} for ${projectName || 'project'}. Reminder from ${managerName || managerId}.`,
+            type: 'reminder',
+            userId: employeeId,
+            role: 'EMPLOYEE',
+            meta: {
+                managerId,
+                projectId,
+                weekStartDate,
+                weekEndDate
+            }
+        });
+
+        await notification.save();
+
+        res.status(201).json({
+            success: true,
+            message: `Reminder sent to ${employeeName || employeeId}`,
+            data: notification
+        });
+    } catch (error) {
+        console.error('Error sending reminder:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to send reminder'
+        });
     }
 });
 

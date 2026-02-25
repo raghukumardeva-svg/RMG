@@ -215,6 +215,16 @@ router.get('/', async (req, res) => {
                 const pendingApprovedHours = pendingEntries
                     .reduce((sum, e) => sum + convertHoursToDecimal(e.hours), 0);
 
+                // Calculate rejected hours
+                const rejectedHours = entries
+                    .filter(e => e.approvalStatus === 'rejected')
+                    .reduce((sum, e) => sum + convertHoursToDecimal(e.hours), 0);
+
+                // Calculate revision requested hours
+                const revisionRequestedHours = entries
+                    .filter(e => e.approvalStatus === 'revision_requested')
+                    .reduce((sum, e) => sum + convertHoursToDecimal(e.hours), 0);
+
                 // Build pending details with project manager name
                 const pendingProjectIds = [...new Set(pendingEntries.map(e => e.projectId).filter(Boolean))];
                 const pendingProjects = pendingProjectIds.length > 0
@@ -261,6 +271,8 @@ router.get('/', async (req, res) => {
                     actualHours: Number.parseFloat(actualHours.toFixed(2)),
                     approvedHours: Number.parseFloat(approvedHours.toFixed(2)),
                     pendingApprovedHours: Number.parseFloat(pendingApprovedHours.toFixed(2)),
+                    rejectedHours: Number.parseFloat(rejectedHours.toFixed(2)),
+                    revisionRequestedHours: Number.parseFloat(revisionRequestedHours.toFixed(2)),
                     pendingDetails
                 };
             })
@@ -275,7 +287,9 @@ router.get('/', async (req, res) => {
             totalNonBillableApprovedHours: reportData.reduce((sum, r) => sum + r.nonBillableApprovedHours, 0),
             totalActualHours: reportData.reduce((sum, r) => sum + r.actualHours, 0),
             totalApprovedHours: reportData.reduce((sum, r) => sum + r.approvedHours, 0),
-            totalPendingApprovedHours: reportData.reduce((sum, r) => sum + r.pendingApprovedHours, 0)
+            totalPendingApprovedHours: reportData.reduce((sum, r) => sum + r.pendingApprovedHours, 0),
+            totalRejectedHours: reportData.reduce((sum, r) => sum + r.rejectedHours, 0),
+            totalRevisionRequestedHours: reportData.reduce((sum, r) => sum + r.revisionRequestedHours, 0)
         };
 
         console.log(`[Employee Hours Report] Returning ${reportData.length} employees with data`);
