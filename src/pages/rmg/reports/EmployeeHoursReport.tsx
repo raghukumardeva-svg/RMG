@@ -588,40 +588,102 @@ const EmployeeHoursReport: React.FC = () => {
   // Load initial data
   useEffect(() => {
     const loadInitialData = async () => {
+      if (!user) {
+        console.log(
+          "[Employee Hours Report] No user found, skipping initialization",
+        );
+        return;
+      }
+
       try {
-        // Calculate initial date range for current_month BEFORE loading report
+        console.log(
+          "[Employee Hours Report] Starting initialization for role:",
+          userRole,
+        );
+
+        // Calculate initial date range for current_month
         const today = new Date();
         const start = format(startOfMonth(today), "yyyy-MM-dd");
         const end = format(endOfMonth(today), "yyyy-MM-dd");
+
+        console.log(
+          "[Employee Hours Report] Setting initial date range:",
+          start,
+          "to",
+          end,
+        );
         setStartDate(start);
         setEndDate(end);
 
         // Load projects if user can see filters
         if (canSeeFilters) {
+          console.log("[Employee Hours Report] Loading projects for", userRole);
           const projectsData = await employeeHoursReportService.getProjects(
             userRole,
             user?.employeeId || user?.id,
+          );
+          console.log(
+            "[Employee Hours Report] Loaded projects:",
+            projectsData.length,
           );
           setProjects(projectsData);
 
           // Load departments (only for RMG)
           if (userRole === "RMG") {
             const depsData = await employeeHoursReportService.getDepartments();
+            console.log(
+              "[Employee Hours Report] Loaded departments:",
+              depsData.length,
+            );
             setDepartments(depsData);
           }
         }
 
-        // Note: loadReport will be triggered by the startDate/endDate change via auto-reload effect
-      } catch (error) {
-        console.error("Error loading initial data:", error);
-        toast.error("Failed to load initial data");
-      } finally {
+        // Mark initial load as complete
         setIsInitialLoad(false);
+
+        // Now explicitly trigger the initial report load
+        // We need to do this because the auto-reload effect won't trigger on first mount
+        console.log("[Employee Hours Report] Triggering initial report load");
+
+        // Create initial filters
+        const initialFilters: ReportFilters = {
+          role: userRole as "EMPLOYEE" | "RMG" | "MANAGER",
+          employeeId:
+            userRole === "EMPLOYEE" ? user.employeeId || user.id : undefined,
+          managerId:
+            userRole === "MANAGER" ? user.employeeId || user.id : undefined,
+          startDate: start,
+          endDate: end,
+        };
+
+        console.log("[Employee Hours Report] Initial filters:", initialFilters);
+
+        // Load report with initial filters
+        setIsLoading(true);
+        const response =
+          await employeeHoursReportService.getReport(initialFilters);
+        console.log("[Employee Hours Report] Initial response:", response);
+
+        setReportData(response.employees);
+        setSummary(response.summary);
+        setIsLoading(false);
+
+        // Load project allocations
+        loadProjectAllocations();
+      } catch (error) {
+        console.error(
+          "[Employee Hours Report] Error loading initial data:",
+          error,
+        );
+        toast.error("Failed to load initial data");
+        setIsInitialLoad(false);
+        setIsLoading(false);
       }
     };
 
     loadInitialData();
-  }, []);
+  }, [user?.employeeId, userRole]);
 
   // Calculate date range based on filter type
   useEffect(() => {
